@@ -39,8 +39,8 @@ example_use_cases:
 paths:
   - /usr/bin/sw_vers
 detections:
-  - name: No detections at time of publishing
-    url: N/A
+  - name: "Sigma: System Information Discovery Using sw_vers"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_swvers_discovery.yml
 resources:
   - name: "macOS/binaries/sw_vers"
     url: https://macosbin.com/bin/sw_vers
