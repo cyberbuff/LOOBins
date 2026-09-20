@@ -1,0 +1,34 @@
+name: gktool
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Assess Gatekeeper policy on an app bundle and pre-warm the assessment cache so its first launch is silent.
+full_description: gktool is a command-line utility introduced in macOS 14 (Sonoma) for assessing Gatekeeper policy on applications. Its single documented subcommand, gktool scan <path>, runs a Gatekeeper assessment of an app bundle and populates syspolicyd's assessment cache. Its intended use is pre-warming that cache at install time so a user does not see the "Verifying..." dialog and launch delay the first time an application is opened. An attacker who has staged a payload that already passes Gatekeeper (a signed and notarized bundle, or one whose com.apple.quarantine attribute has been removed) can run gktool scan on it to cache the assessment ahead of time, so the victim's first launch produces no verification prompt or delay, and to exercise the host's Gatekeeper policy against the bundle without launching it. gktool only assesses and caches; it does not bypass a Gatekeeper block. A bundle that would be refused at launch is still refused, so the trust itself must come from valid signing and notarization or a separate quarantine-removal step.
+created: 2026-09-20
+example_use_cases:
+  - name: Pre-warm the Gatekeeper cache to suppress the first-launch "Verifying..." dialog
+    description: gktool scan runs a Gatekeeper assessment of an app bundle and caches the result in syspolicyd. Running it against a dropped payload at deployment time means the user's first launch of that payload produces no "Verifying..." dialog and no launch-time delay, removing UI friction that could alert a user or an analyst watching the endpoint. This only helps a payload that already passes Gatekeeper, meaning a validly signed and notarized bundle or one whose com.apple.quarantine attribute has already been stripped; pre-warming does not bypass a Gatekeeper block. The scan runs as any user and needs only the bundle on disk. The same invocation also serves as reconnaissance, since an operator can point it at a staged payload to exercise the target host's current Gatekeeper policy without generating an application launch or process-execution event for the payload itself. The scan is not silent to the system, since it invokes syspolicyd, which produces its own assessment telemetry.
+    code: gktool scan /path/to/Payload.app
+    tactics:
+      - Defense Evasion
+      - Discovery
+    tags:
+      - gatekeeper
+paths:
+  - /usr/bin/gktool
+detections:
+  - name: "Command Line Argument Detection: /usr/bin/gktool invoked with the scan subcommand against an app bundle in a temporary, download, or user-writable directory (e.g. /tmp, /var/folders, ~/Downloads), which is anomalous for an installer or MDM pre-warm workflow."
+    url: N/A
+  - name: "Process Lineage Detection: gktool executed by a non-installer, non-MDM parent process (a shell, a scripting interpreter, or a dropped binary) rather than by package installation or management tooling."
+    url: N/A
+  - name: "Correlate gktool executions with the syspolicyd assessment events they trigger and with quarantine-attribute removal on the same bundle to surface pre-launch payload staging."
+    url: N/A
+resources:
+  - name: "macOS 14 Release Notes (gktool introduction)"
+    url: https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes
+  - name: "gktool(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/gktool.8.html
+  - name: "Apple: Gatekeeper and runtime protection in macOS"
+    url: https://support.apple.com/guide/security/gatekeeper-and-runtime-protection-sec5599b66df/web
+  - name: "Munki issue #1180: Pre-warm .apps on macOS Sonoma with gktool"
+    url: https://github.com/munki/munki/issues/1180
+  - name: "Red Canary: Gatekeeping in macOS"
+    url: https://redcanary.com/blog/threat-detection/gatekeeper/
