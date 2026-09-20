@@ -1,0 +1,106 @@
+name: bioutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: View and change Touch ID biometric configuration and list or delete enrolled templates.
+full_description: |
+  bioutil is the command-line tool for viewing and changing macOS biometrics (Touch ID) configuration,
+  both system-wide and per user, and for listing and deleting enrolled biometric templates. It reads the
+  current state (whether biometrics are enabled for unlock and Apple Pay, and how many templates are
+  enrolled) and, with the write flag, toggles those settings or purges the enrolled templates. The
+  enrolled fingerprint data itself lives in the Secure Enclave; bioutil manipulates the configuration that
+  governs whether that data is used and instructs the deletion of templates. Reading the current user's
+  configuration and template count runs unprivileged, but changing configuration, operating system-wide
+  (-s), and deleting another user's templates require root. To an attacker who already holds root, bioutil
+  is a native way to turn a hardware-backed authentication path back into a password one: disabling Touch ID
+  for unlock forces the user to type their account or keychain password into a login window, an
+  authentication dialog, or a sudo prompt, where it can be captured by a keylogger or a spoofed prompt.
+  Because the same tool is used by MDM tooling and inventory agents such as Fleet to report Touch ID status,
+  its execution is not by itself unusual in a managed fleet.
+created: 2026-09-20
+example_use_cases:
+  - name: Read the current user's biometric configuration
+    description: The -r option reads whether Touch ID is enabled for the current user's unlock and Apple Pay flows. It requires no elevation and tells an attacker whether forcing a password fallback is worthwhile.
+    code: bioutil -r
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Read system-wide biometric configuration
+    description: Adding -s to -r reads the system-wide biometric configuration. This requires root and reveals the Touch ID posture beyond the current user.
+    code: sudo bioutil -r -s
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Count the current user's enrolled biometric templates
+    description: The -c option prints the current user's enrolled template count without elevation. This shows whether Touch ID is configured for that user.
+    code: bioutil -c
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Count all enrolled biometric templates system-wide
+    description: The -c -s form prints template counts for every enrolled user and requires root. It identifies which accounts have biometric unlock configured.
+    code: sudo bioutil -c -s
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Disable Touch ID for unlock to force account password entry
+    description: |
+      Disabling biometrics for unlock removes the Touch ID option from the login window, screen unlock, sudo,
+      and authentication dialogs, forcing the user to type their account or keychain password instead. That
+      password can then be captured by a keylogger or a spoofed authentication prompt, converting a
+      hardware-backed path into a phishable one (MITRE ATT&CK T1556, Modify Authentication Process). The man
+      page documents "-u {0 | 1}" to enable or disable biometrics for unlock; the "sudo bioutil -w -s -u 0"
+      form in the man page examples applies it system-wide and requires root.
+    code: sudo bioutil -w -s -u 0
+    tactics:
+      - Defense Evasion
+      - Credential Access
+    tags:
+      - password
+  - name: Disable all biometric functionality system-wide
+    description: |
+      The "-f {0 | 1}" flag is documented as enabling or disabling overall biometrics functionality and is
+      system-wide configuration only. Setting it to 0 turns off the entire biometric subsystem rather than
+      just the unlock path that "-u" controls, so Apple Pay and every other biometric consumer also fall back
+      to password or passcode. This is a broader kill switch than disabling unlock alone and, being system-wide
+      write, requires root.
+    code: sudo bioutil -w -s -f 0
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Purge all enrolled biometric templates system-wide
+    description: Deleting all templates system-wide forces every user back to a password until they re-enroll, widening the window in which a password can be captured and destroying biometric state. This requires root.
+    code: sudo bioutil -p -s
+    tactics:
+      - Defense Evasion
+      - Credential Access
+      - Impact
+    tags: []
+  - name: Purge a target user's biometric templates
+    description: The -s -d form deletes templates for one user by UID. It forces that target back to password authentication until they re-enroll and requires root.
+    code: sudo bioutil -s -d <TARGET_UID>
+    tactics:
+      - Defense Evasion
+      - Credential Access
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/bioutil
+detections:
+  - name: "Command-line detection: bioutil invoked with the write flag (-w) together with -u 0 or -f 0, disabling Touch ID unlock or all biometrics, especially outside known MDM or inventory tooling"
+    url: N/A
+  - name: "Command-line detection: bioutil invoked with -p (purge) or -d (delete by UID), deleting enrolled biometric templates"
+    url: N/A
+  - name: "Endpoint Security process-exec monitoring: executions of /usr/bin/bioutil with -w, -p, or -d, correlated against the responsible process and whether it belongs to sanctioned management tooling"
+    url: N/A
+resources:
+  - name: "bioutil(1) man page (Apple, mirrored)"
+    url: https://keith.github.io/xcode-man-pages/bioutil.1.html
+  - name: "Fleet: Using bioutil to verify Touch ID/biometric utilization"
+    url: https://fleetdm.com/guides/using-bioutil-cmd
+  - name: "macOS TouchID: how to force immediate password check"
+    url: https://honeytreelabs.com/posts/macos-touchid-how-to-force-immediate-password-check/
+  - name: "MITRE ATT&CK T1556: Modify Authentication Process"
+    url: https://attack.mitre.org/techniques/T1556/
