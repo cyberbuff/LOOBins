@@ -1,0 +1,63 @@
+name: wdutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query and log the host's Wi-Fi environment using the built-in Wireless Diagnostics utility.
+full_description: wdutil is the command-line front end for the macOS Wireless Diagnostics application. It reports the current wireless state, dumps the in-memory Wi-Fi log buffer, produces a full diagnostic bundle, and toggles verbose logging for the DHCP, OpenDirectory, DNS, EAPOL, and Wi-Fi subsystems. It is the native successor to the removed Apple80211 "airport" utility that older macOS malware (for example the OSX.GMERA scripts) called for wireless survey. An attacker can use it to profile the wireless environment, stage historical Wi-Fi activity for collection, or reduce network-layer telemetry without dropping a third-party tool. Note that on macOS Sonoma (14) and later the MAC, SSID, and BSSID fields in "wdutil info" are returned as "<redacted>" unless the calling process holds Location Services permission, which an ad-hoc script or daemon does not; the remaining wireless state is still returned in full.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the current wireless environment
+    description: The "info" subcommand prints the full Wi-Fi Info view, which includes the security/authentication mode, PHY mode, channel and band, RSSI and noise, transmit rate, country code, and interface state, giving an attacker situational awareness of the wireless environment without third-party tooling. This is the built-in successor to the removed "airport -I". On macOS Sonoma (14) and later the MAC, SSID, and BSSID fields are returned as "<redacted>" unless the calling process holds Location Services permission, which an ad-hoc script does not, so those three fields are unavailable from a script; the rest of the output is not redacted. No elevated privileges are required.
+    code: wdutil info
+    tactics:
+      - Discovery
+    tags:
+      - network
+  - name: Dump the Wi-Fi log buffer to a predictable path
+    description: The "dump" subcommand writes the in-memory Wi-Fi log buffer to /tmp/wifi-XXXXXX.log. That buffer records recent association events, scan activity, and interface state changes. An attacker can trigger the dump and then read the file from the predictable /tmp location to profile the host's recent wireless activity. The exact contents depend on what the buffer currently holds.
+    code: wdutil dump
+    tactics:
+      - Collection
+      - Discovery
+    tags:
+      - logging
+  - name: Collect a full wireless diagnostic bundle for exfiltration
+    description: The "diagnose" subcommand runs the same collection as the Wireless Diagnostics application without its UI and writes a diagnostic bundle to the chosen directory (default /var/tmp). The bundle contains system and network configuration, logs, and capture data related to Wi-Fi. An attacker with root can generate this bundle in a single command and stage it for exfiltration to harvest network configuration and diagnostic detail. This subcommand requires root.
+    code: sudo wdutil diagnose -f <OUTPUT_DIR>
+    tactics:
+      - Collection
+    tags: []
+  - name: Enable verbose EAPOL and Wi-Fi logging to record authentication activity
+    description: The "log" subcommand turns on verbose logging for the EAPOL (802.1X) and Wi-Fi subsystems. Left enabled, this records enterprise Wi-Fi authentication exchanges and association events to the system log, which an attacker can later read to profile enterprise network authentication such as EAP method, identity, and timing. It records authentication activity and metadata, not plaintext secrets. This subcommand requires root.
+    code: sudo wdutil log +eapol +wifi
+    tactics:
+      - Collection
+    tags:
+      - logging
+  - name: Disable network diagnostic logging to reduce telemetry
+    description: The same "log" subcommand can disable the DHCP, DNS, EAPOL, and Wi-Fi logging channels using the "-" prefix. An attacker with root can turn these channels off to reduce the network-layer telemetry a defender might rely on during or after an intrusion. This subcommand requires root.
+    code: sudo wdutil log -dhcp -dns -eapol -wifi
+    tactics:
+      - Defense Evasion
+    tags:
+      - logging
+paths:
+  - /usr/bin/wdutil
+detections:
+  - name: "Command Line Argument Detection: execution of /usr/bin/wdutil with the diagnose, dump, or log subcommand, especially from a non-interactive or non-administrative parent process"
+    url: N/A
+  - name: "Endpoint Security (eslogger ES_EVENT_TYPE_NOTIFY_EXEC): monitor process executions of /usr/bin/wdutil and alert on the log subcommand toggling EAPOL, Wi-Fi, DHCP, or DNS channels"
+    url: N/A
+  - name: "File Creation Monitoring: creation of /tmp/wifi-*.log (wdutil dump output) or diagnostic bundles written to /var/tmp by wdutil diagnose"
+    url: N/A
+resources:
+  - name: "wdutil(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/wdutil.8.html
+  - name: "Objective-See: The Mac Malware of 2019 (OSX.GMERA.B Wi-Fi survey via airport, the removed predecessor of wdutil)"
+    url: https://objective-see.org/blog/blog_0x53.html
+  - name: "ESET: Mac cryptocurrency trading application rebranded, bundled with malware (OSX.GMERA reconnaissance script runs airport -s to list Wi-Fi networks)"
+    url: https://www.welivesecurity.com/2020/07/16/mac-cryptocurrency-trading-application-rebranded-bundled-malware/
+  - name: "wifi-unredactor: Wi-Fi (B)SSID redaction on the macOS CLI in Sonoma and later"
+    url: https://github.com/noperator/wifi-unredactor
+  - name: "wdutil for Troubleshooting Wi-Fi Issues on macOS"
+    url: https://netbeez.net/blog/wdutil-for-troubleshooting-wi-fi-issues-on-macos/
+acknowledgements:
+  - Patrick Wardle (Objective-See, OSX.GMERA analysis documenting airport-based Wi-Fi survey)
