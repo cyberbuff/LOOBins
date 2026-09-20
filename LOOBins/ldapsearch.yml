@@ -68,8 +68,6 @@ detections:
     url: N/A
   - name: "Detecting LDAP reconnaissance (Black Lantern Security) - anomalous bulk and filtered LDAP query patterns against a domain controller"
     url: https://blog.blacklanternsecurity.com/p/detecting-ldap-recoannaissance
-  - name: "Microsoft Defender for Identity reconnaissance and discovery alerts - security principal reconnaissance (LDAP) and related enumeration detections on the domain controller"
-    url: https://learn.microsoft.com/en-us/defender-for-identity/reconnaissance-discovery-alerts
 resources:
   - name: "ldapsearch(1) manual page"
     url: https://keith.github.io/xcode-man-pages/ldapsearch.1.html
