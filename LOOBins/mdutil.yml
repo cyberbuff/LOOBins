@@ -1,0 +1,95 @@
+name: mdutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Manage the Spotlight metadata stores, including disabling, erasing and removing a volume's index.
+full_description: >-
+  mdutil is the command-line tool Apple ships with macOS to manage the metadata stores that back Spotlight.
+  Administrators use it to turn indexing on or off per volume, check indexing status, rebuild a corrupt store
+  and clear cached network indexes. The same controls make it useful to an adversary. The Spotlight index at
+  /.Spotlight-V100 is a forensic artifact: it records file metadata, timestamps and inode relationships,
+  and it retains information about files that once existed on the volume even after they are deleted. mdfind
+  (an existing LOOBin) and manual forensic timelining both read from this store. An operator who has reached
+  root can use mdutil to disable indexing so new activity is never recorded, erase the local stores, or remove
+  the index directory outright, degrading the search and timeline data that defenders and forensic analysts
+  rely on. Because mdutil is a signed, first-party Apple binary that admins invoke routinely, this activity
+  blends into normal system maintenance.
+created: 2026-09-20
+example_use_cases:
+  - name: Disable Spotlight indexing on all volumes to stop new activity being recorded
+    description: >-
+      The -i off flag sets the indexing status for a volume to off, and -a applies the command to every store
+      on every volume. Once indexing is disabled the metadata store is no longer updated, so files an operator
+      creates, accesses or stages after this point are never captured in the index that mdfind queries and that
+      forensic timelining reconstructs. Modifying the indexing state of the system and data volumes requires
+      root; System Integrity Protection also guards some system stores.
+    code: sudo mdutil -a -i off
+    tactics:
+      - Defense Evasion
+    tags:
+      - spotlight
+  - name: Erase the local Spotlight stores to purge indexed history
+    description: >-
+      The -E flag erases each local store for the indicated volumes; combined with -a it clears every store on
+      the machine. The store is rebuilt only if indexing is enabled and only from files still present, so the
+      accumulated metadata about files that were deleted before the erase is permanently lost. This removes a
+      body of evidence about prior file activity while remaining an ordinary index-maintenance command. Erasing
+      the system and data stores requires root.
+    code: sudo mdutil -E -a
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags:
+      - spotlight
+  - name: Remove a volume's Spotlight index directory outright
+    description: >-
+      The -X flag removes the Spotlight index directory (/.Spotlight-V100) on the specified volume. Per the man
+      page this does not disable indexing, so Spotlight reevaluates the volume on unmount and remount, at reboot,
+      or when an explicit index command such as mdutil -i or mdutil -E is run. Used against an external or data
+      volume it destroys the on-disk index and the deleted-file metadata it held before defenders can collect
+      it. Requires root, and System Integrity Protection restricts removal of some system-managed stores.
+    code: sudo mdutil -X /Volumes/<VOLUME_NAME>
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags:
+      - spotlight
+  - name: Enumerate indexing status before acting
+    description: >-
+      The -s flag displays the indexing status of the listed volumes and -a reports every volume. This is a
+      low-noise reconnaissance step that tells an operator which volumes are indexed, and therefore where the
+      Spotlight store holds usable data and which stores are worth disabling or erasing, before taking any
+      destructive action.
+    code: mdutil -s -a
+    tactics:
+      - Discovery
+    tags:
+      - spotlight
+  - name: Dump a volume's Spotlight configuration to find indexed and excluded paths
+    description: >-
+      The -P flag dumps the VolumeConfiguration.plist for the specified volume, which records the indexing
+      configuration including exclusions. Reading it shows an operator which locations are indexed and which are
+      already excluded from Spotlight, identifying paths where staged files would not be captured by the index.
+      The configuration lives under the root-owned index directory, so reading it requires root.
+    code: sudo mdutil -P /
+    tactics:
+      - Discovery
+    tags:
+      - spotlight
+      - requires-root
+paths:
+  - /usr/bin/mdutil
+detections:
+  - name: "Command-line detection: mdutil invoked with -i off, -E or -X (especially with -a), indicating Spotlight indexing being disabled or an index being erased or removed"
+    url: N/A
+  - name: "Endpoint Security file-event detection: deletion of a /.Spotlight-V100 directory, or writes to VolumeConfiguration.plist, by a process other than the Spotlight daemons (mds, mds_stores)"
+    url: N/A
+  - name: "Correlate mdutil execution with a preceding burst of file writes or deletions by the same session, indicating index tampering used to cover file activity"
+    url: N/A
+resources:
+  - name: "mdutil(1) manual page (Apple, via keith.github.io xcode-man-pages)"
+    url: https://keith.github.io/xcode-man-pages/mdutil.1.html
+  - name: "mdutil - ss64 macOS command reference"
+    url: https://ss64.com/mac/mdutil.html
+  - name: "MITRE ATT&CK T1070: Indicator Removal"
+    url: https://attack.mitre.org/techniques/T1070/
+  - name: "Parsing the Spotlight database (store.db) - Yogesh Khatri, Swift Forensics"
+    url: https://www.swiftforensics.com/2018/08/parsing-spotlight-database.html
