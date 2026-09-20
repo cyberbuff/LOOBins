@@ -1,0 +1,72 @@
+name: aa
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Archive, append, and extract directory trees using the native Apple Archive format.
+full_description: |
+  aa is the command-line front end for the Apple Archive library and ships with macOS. It creates and
+  unpacks Apple Archives (the .aar/.yaa format used by system components such as software updates and the
+  Signed System Volume), supporting several compression algorithms and a target-directory model similar to
+  tar. Because it is a signed Apple binary present on every install, an operator can use it to compress and
+  stage collected files for exfiltration, or to unpack a payload delivered in Apple Archive form, without
+  dropping a third-party archiver such as 7z or bringing their own tooling. Its output format is less
+  commonly inspected by content-aware tooling than a plain zip or tar, and the whole operation runs as the
+  current user against files that user can already read.
+created: 2026-09-20
+example_use_cases:
+  - name: Stage and compress collected data for exfiltration
+    description: |
+      The archive command walks a target directory and writes a single compressed Apple Archive. An operator
+      who has gathered documents, keychains, or browser data into a staging directory can pack it into one
+      file with a native, signed binary before moving it off the host, rather than invoking a third-party
+      archiver. -a selects the compression algorithm and -d sets the directory that is archived. It runs as
+      the current user and needs only read access to the staged files.
+    code: aa archive -d /Users/<USER>/.stage -o /tmp/collected.aar -a lzfse
+    tactics:
+      - Collection
+    tags: []
+  - name: Extract a payload delivered as an Apple Archive
+    description: |
+      The extract command unpacks an archive into a target directory. An operator can deliver follow-on
+      tooling or a second-stage payload packed as an Apple Archive and unpack it on the host with the native
+      binary, keeping the delivery format off the well-worn zip/tar path that some tooling watches. -i names
+      the archive and -d the directory to write into.
+    code: aa extract -i /tmp/payload.aar -d /Users/<USER>/Library/.cache
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Inspect an archive before unpacking it
+    description: |
+      The list command prints an archive's contents without extracting them. An operator handling a collected
+      or delivered archive can enumerate what it holds before writing anything to disk, for example to confirm
+      a staging archive captured the intended files or to review a delivered archive on the host. -v raises
+      verbosity so per-entry detail is shown.
+    code: aa list -i /tmp/collected.aar -v
+    tactics:
+      - Discovery
+    tags: []
+  - name: Append newly collected files to an existing staging archive
+    description: |
+      The append command adds the contents of a target directory to an existing archive file. Over a longer
+      operation an operator can grow a single staging archive as new material is gathered, keeping collected
+      data in one native container rather than leaving many loose files or repeatedly re-archiving. -d sets
+      the directory whose contents are appended.
+    code: aa append -d /Users/<USER>/.stage/new -o /tmp/collected.aar
+    tactics:
+      - Collection
+    tags: []
+paths:
+  - /usr/bin/aa
+  - /usr/bin/yaa
+detections:
+  - name: "Process execution of /usr/bin/aa (or the yaa alias) with the archive or append command targeting user-data directories (for example ~/Library, ~/Documents, browser profile paths), which is uncommon for interactive use and consistent with collection staging."
+    url: N/A
+  - name: "File creation of .aar or .yaa archives in temporary or user-writable locations (/tmp, /var/folders, ~/Library/Caches) shortly before an outbound network transfer."
+    url: N/A
+  - name: "Endpoint Security process-execution telemetry (ES_EVENT_TYPE_NOTIFY_EXEC) for /usr/bin/aa invoked by a non-installer, non-developer parent process."
+    url: N/A
+resources:
+  - name: "aa(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/aa.1.html
+  - name: "MITRE ATT&CK T1560.001: Archive Collected Data - Archive via Utility"
+    url: https://attack.mitre.org/techniques/T1560/001/
+  - name: "MITRE ATT&CK T1560: Archive Collected Data"
+    url: https://attack.mitre.org/techniques/T1560/
