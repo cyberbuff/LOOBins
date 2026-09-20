@@ -1,0 +1,165 @@
+name: pwpolicy
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read and modify Directory Services password policies, account state, and stored hash types.
+full_description: |
+  pwpolicy is the Directory Services password administration tool. It reads and writes the account policy
+  dictionaries that decide when an account may authenticate, how often its password must change, and what a
+  password is allowed to contain. It can also set a user's password, disable and re-enable an account, and
+  report which password hash formats are written to disk for an account. Account policies are the mechanism
+  behind the lockout, expiry, and complexity controls that CIS and NIST macOS baselines check, so pwpolicy is
+  the same tool auditors and attackers use to read them. For an attacker it is useful twice over - reading
+  policy before a password-guessing attempt reveals the lockout threshold and complexity floor, and writing
+  policy after a compromise removes the expiry and lockout that would otherwise age out or trip up a planted
+  account. It is a signed Apple binary present on every macOS install, so its execution does not introduce a
+  new file to the host. The legacy -getpolicy / -setpolicy / -getglobalpolicy / -setglobalpolicy commands are
+  marked DEPRECATED in the man page and are superseded by the account policy commands.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the global password policy before guessing credentials
+    description: |
+      pwpolicy prints the global account policy dictionary as XML. The dictionary contains the lockout
+      threshold (policyAttributeMaximumFailedAuthentications), the expiry interval, and the password content
+      predicates, which tells an attacker how many guesses an account tolerates and what a valid password
+      must look like before any authentication attempt is made. This maps to MITRE ATT&CK T1201 (Password
+      Policy Discovery) and runs without elevation. The leading dash on the command word is optional - the
+      Microsoft Defender command-line signature uses the bare "pwpolicy getaccountpolicies" form.
+    code: pwpolicy -getaccountpolicies
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate a specific user's password policy before guessing credentials
+    description: |
+      pwpolicy can print the account policy dictionary for a single named user instead of the global default,
+      which matters when that user has an overriding per-account policy. This tells an attacker how many
+      guesses that specific account tolerates and what a valid password must look like before any
+      authentication attempt is made against it. Runs without elevation.
+    code: pwpolicy -u <TARGET_USER> -getaccountpolicies
+    tactics:
+      - Discovery
+    tags: []
+  - name: Identify which password hash formats the system writes by default
+    description: |
+      pwpolicy -getglobalhashtypes reports the hash formats macOS writes on disk system-wide. macOS writes
+      SALTED-SHA512-PBKDF2 for loginwindow by default, but the list can also include legacy formats such as
+      SALTED-SHA512, SALTED-SHA1, SHA1, CRAM-MD5, and SMB-NT. An attacker uses this to learn which formats are
+      generally worth targeting on the host before extracting any specific account's hash.
+    code: pwpolicy -getglobalhashtypes
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Identify which password hashes are recoverable for a specific account
+    description: |
+      pwpolicy -gethashtypes reports the hash formats actually stored for a named account. An attacker who
+      already has root and can read the account's ShadowHashData uses this to decide which stored hash is
+      worth extracting and cracking offline, rather than pulling the record blind.
+    code: sudo pwpolicy -u <TARGET_USER> -gethashtypes
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Confirm a harvested account is still usable without a login attempt
+    description: |
+      The -authentication-allowed command evaluates the account policies for a user and reports whether those
+      policies currently permit the user to authenticate. An attacker holding a credential recovered from a
+      keychain, a script, or a hash crack can use this to check that the account is not disabled, expired, or
+      locked out before spending it, avoiding the failed-authentication events that a login attempt against a
+      dead account would generate. It evaluates policy only - it does not test the password.
+    code: |
+      pwpolicy -u <TARGET_USER> -authentication-allowed
+    tactics:
+      - Discovery
+    tags: []
+  - name: Strip global account policies so password guessing is not throttled
+    description: -clearaccountpolicies without a user removes the global policy dictionary, including lockout thresholds, password expiry, and content requirements. This weakens policy for every account and requires root or an administrator supplied with -a.
+    code: sudo pwpolicy -clearaccountpolicies
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags:
+      - policy
+  - name: Strip a target user's account policies
+    description: -clearaccountpolicies for a named user removes only that user's policy dictionary, letting a planted account avoid expiry and lockout while preserving the global policy. Requires root or an administrator supplied with -a.
+    code: sudo pwpolicy -u <TARGET_USER> -clearaccountpolicies
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags:
+      - policy
+  - name: Replace an account policy with an attacker-chosen dictionary
+    description: |
+      -setaccountpolicies replaces the account policy dictionary from a plist instead of deleting it, which
+      leaves a populated-looking policy in place for a compliance check while the attacker chooses its
+      contents - for example a lockout threshold high enough to permit unthrottled guessing while still
+      appearing to enforce a policy. Writes to the directory node and requires root or an administrator
+      passed with -a.
+    code: sudo pwpolicy -setaccountpolicies <PATH_TO_POLICY_PLIST>
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags:
+      - policy
+  - name: Take over an existing account by setting its password as root
+    description: |
+      -setpassword writes a new password for an account. Setting another user's password requires root when
+      run this way. The man page's own example passes the new password as a command argument, where it is
+      visible in the process arguments and in shell history, while omitting it produces a secure prompt
+      instead. Changing the password out of band does not resynchronise the user's login keychain or a
+      Secure Token protected FileVault credential, so the account can end up authenticating at loginwindow
+      while its keychain stays locked with the old password. That mismatch is visible to the account's owner.
+    code: sudo pwpolicy -u <TARGET_USER> -setpassword
+    tactics:
+      - Persistence
+      - Credential Access
+    tags:
+      - password
+  - name: Take over an existing account by setting its password via another admin
+    description: |
+      -setpassword can also authenticate as a specific administrator supplied with -a rather than relying on
+      root, which lets an attacker use one compromised admin credential to overwrite another user's password.
+      As with the root form, the new password is visible in the process arguments and shell history unless
+      omitted for a secure prompt, and changing the password out of band leaves the account's login keychain
+      and any Secure Token protected FileVault credential unsynchronised.
+    code: pwpolicy -a <ADMIN_USER> -u <TARGET_USER> -setpassword
+    tactics:
+      - Persistence
+      - Credential Access
+    tags:
+      - password
+  - name: Disable defender and administrator accounts
+    description: |
+      -disableuser marks an account as not permitted to authenticate at the directory level. Unlike deleting
+      the account the record and home directory stay in place, so the account still appears in dscl and in
+      the user list and the change is less conspicuous than a deletion while still denying the owner a login.
+      An attacker can use this to lock out the administrators or incident responders who would otherwise
+      evict them. Requires root or an administrator supplied with -a.
+    code: sudo pwpolicy -u <TARGET_USER> -disableuser
+    tactics:
+      - Impact
+      - Defense Evasion
+    tags: []
+  - name: Re-enable a disabled account to restore access
+    description: |
+      -enableuser reverses -disableuser, restoring an account's ability to authenticate at the directory
+      level. An attacker who previously disabled a defender or administrator account to deny them access can
+      use this to restore it once the lockout is no longer needed, or to re-activate a planted account that
+      was left disabled to avoid detection. Requires root or an administrator supplied with -a.
+    code: sudo pwpolicy -u <TARGET_USER> -enableuser
+    tactics:
+      - Impact
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/pwpolicy
+detections:
+  - name: "Microsoft Defender: HackTool:MacOS/SuspPolicyDiscovery.A1 - command-line signature matching 'pwpolicy getaccountpolicies'"
+    url: https://github.com/roadwy/DefenderYara/blob/main/HackTool/MacOS/SuspPolicyDiscovery/HackTool_MacOS_SuspPolicyDiscovery_A1.yar
+  - name: "Microsoft Defender: HackTool:MacOS/SuspSysDataCollect.BH2 - matches host survey scripts that chain 'pwpolicy getaccountpolicies' with other enumeration commands"
+    url: https://github.com/roadwy/DefenderYara/blob/main/HackTool/MacOS/SuspSysDataCollect/HackTool_MacOS_SuspSysDataCollect_BH2.yar
+resources:
+  - name: "pwpolicy(8) man page"
+    url: https://keith.github.io/xcode-man-pages/pwpolicy.8.html
+  - name: "MITRE ATT&CK T1201: Password Policy Discovery"
+    url: https://attack.mitre.org/techniques/T1201/
+  - name: "Atomic Red Team T1201: Examine password policy - macOS"
+    url: https://www.atomicredteam.io/atomic-red-team/atomics/T1201
