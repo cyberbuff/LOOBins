@@ -1,0 +1,90 @@
+name: xar
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Create, list and extract eXtensible ARchive files, the container format of macOS flat installer packages (.pkg).
+full_description: xar is the eXtensible ARchiver, a general purpose archive tool whose format stores an XML table of contents (TOC) at the head of the file followed by a heap of per-file data. Its own man page carries a deprecation warning stating that xar is no longer under active development by Apple, but the binary still ships at /usr/bin/xar because the macOS flat installer package (.pkg) is a xar archive - `file` reports a .pkg as "xar archive compressed TOC". That makes xar the native tool for taking a signed vendor installer apart, editing the plain-XML Distribution or PackageInfo members that decide what the Installer runs as root, and putting it back together. It is attractive to an attacker for three separate reasons - it unpacks a delivered .pkg without invoking the macOS Installer, so nothing in the package executes and none of Installer's signature or notarization handling applies; it can trojanize and repack a legitimate installer; and as a plain archiver it can stage collected files into one compressed container while deliberately discarding the ownership and timestamp metadata a responder would want.
+created: 2026-09-20
+example_use_cases:
+  - name: Extract a delivered installer package without invoking the macOS Installer
+    description: xar -x with -C extracts the members of a flat .pkg into a chosen, existing directory. The extraction only reads the archive, so preinstall and postinstall scripts and Distribution installation-check JavaScript never run, and macOS Installer's signature and notarization handling is never involved. Component-package Payload and Scripts members remain gzip-compressed cpio archives after this step.
+    code: xar -xf /var/tmp/update.pkg -C /var/tmp/.stage
+    tactics:
+      - Defense Evasion
+      - Execution
+    tags: []
+  - name: List a delivered installer package's members without extracting it
+    description: xar -t lists the members of a flat .pkg without running the Installer or extracting files. It lets an operator profile the package's contents before deciding whether to extract or execute it.
+    code: xar -tf /var/tmp/update.pkg
+    tactics:
+      - Discovery
+    tags: []
+  - name: Extract a legitimate installer for Distribution-file editing
+    description: The Distribution file at the root of a distribution-style flat package is plain XML and directly editable after extraction. Its installation-check tag can name a JavaScript function that the Installer runs before installation and whose system.run API can spawn shell processes. The target extraction directory must already exist.
+    code: xar -xf Legit.pkg -C /tmp/pkg
+    tactics:
+      - Resource Development
+      - Defense Evasion
+      - Execution
+    tags: []
+  - name: Repack an edited installer package without compression
+    description: From the edited package directory, xar --compression none -cf rebuilds the package. The compression must be none or installation fails with a cpio read error. Repacking discards the original package signature, leaving an unsigned package subject to Gatekeeper if it carries a quarantine attribute.
+    code: xar --compression none -cf /tmp/Trojaned.pkg .
+    tactics:
+      - Resource Development
+      - Defense Evasion
+      - Execution
+    tags: []
+  - name: Dump a package table of contents to profile installers and their signing chain
+    description: xar --dump-toc writes the archive's XML header to a file without extracting anything. The TOC lists every member, its size and checksums, and signed packages carry their embedded X.509 certificate chain in a signature element. An attacker can profile a package through its headers without installing or modifying it.
+    code: xar --dump-toc=/tmp/toc.xml -f /Library/Vendor/Vendor.pkg
+    tactics:
+      - Discovery
+    tags: []
+  - name: Stage collected files in one archive while stripping ownership and timestamp metadata
+    description: xar -c creates an archive with a compression engine selected by --compression, and --distribution restricts what is stored to only the file properties considered safe for distribution - the man page states that only name, type, mode and data are preserved. Ownership, UID/GID and timestamps are therefore not written into the TOC, so an archive recovered by a responder from disk or from network capture carries none of the provenance a normal tar or zip would. --exclude takes a POSIX regular expression and can be given repeatedly to keep bulky or noisy files out of the staged archive.
+    code: xar -cf /var/tmp/.cache.xar --compression=bzip2 --distribution --exclude '\.(jpg|png|mov)$' /Users/<USER>/Documents
+    tactics:
+      - Collection
+      - Defense Evasion
+    tags: []
+  - name: Plant files with attacker-chosen ownership and setuid bits by extracting as root
+    description: On extraction xar normally writes files as the UID/GID of the extracting process and strips setuid/setgid bits. -P instead sets ownership from the UID/GID recorded in the archive and, when that ownership can be applied, preserves the setuid/setgid bits along with it; -p does the same from symbolic user and group names. Combined with -C to choose the extraction root, a single extraction run as root can write an attacker-built archive anywhere on the filesystem with arbitrary ownership, including a setuid-root binary left behind for later re-escalation from an unprivileged account. This requires root already, and writes outside SIP-protected paths only. Without -p or -P, --keep-setuid preserves the setuid bit even though the extracted file is owned by the extracting user, which does not yield root but does produce a setuid file where an inventory scan would not expect one.
+    code: sudo xar -xf /var/tmp/stage.xar -P -C /
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags: []
+paths:
+  - /usr/bin/xar
+detections:
+  - name: "Sigma Rules: Suspicious Installer Package Child Process (catches the payoff of a trojanized package - Installer or package_script_service spawning a shell)"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_installer_susp_child_process.yml
+  - name: "Process execution: /usr/bin/xar with -x or --dump-toc against a .pkg in a user-writable staging path (/tmp, /var/tmp, ~/Library, ~/Downloads), where the parent is not a developer or packaging tool"
+    url: N/A
+  - name: "Process execution: /usr/bin/xar run as root with -P, -p or --keep-setuid, or extracting with -C to / or another system path"
+    url: N/A
+  - name: "File creation: a file whose first four bytes are 78 61 72 21 written outside a build or download directory, especially with an extension other than .pkg or .xar"
+    url: N/A
+  - name: "Process lineage: Installer spawning bash/sh directly rather than package_script_service, which indicates Distribution-file JavaScript rather than preinstall/postinstall scripts"
+    url: N/A
+resources:
+  - name: "xar(1) man page"
+    url: https://keith.github.io/xcode-man-pages/xar.1.html
+  - name: "The XAR project (format and tool documentation)"
+    url: https://mackyle.github.io/xar/xar.html
+  - name: "Clipping Silver Sparrow's wings (Red Canary) - Distribution file JavaScript execution"
+    url: https://redcanary.com/blog/threat-detection/clipping-silver-sparrows-wings/
+  - name: "macOS Malware Analysis: PKG Files (structure of a flat package)"
+    url: https://www.malwr4n6.com/post/macos-malware-analysis-pkg-files
+  - name: "Repackaging a macOS .pkg installer with xar (--compression none requirement, unsigned result)"
+    url: https://www.codejam.info/2022/04/repackage-macos-app-m1-support-without-rosetta.html
+  - name: "Extracting code-signing certificates from .pkg files via xar --dump-toc"
+    url: https://gist.github.com/peasead/079d0e046032cacc1c5c7795a43a65ea
+  - name: "Analyzing a Pirrit adware installer (walking the xar structure of a malicious .pkg)"
+    url: https://forensicitguy.github.io/analyzing-pirrit-adware-installer/
+  - name: "MITRE ATT&CK T1560.001 - Archive Collected Data: Archive via Utility"
+    url: https://attack.mitre.org/techniques/T1560/001/
+  - name: "MITRE ATT&CK T1546.016 - Event Triggered Execution: Installer Packages"
+    url: https://attack.mitre.org/techniques/T1546/016/
+acknowledgements:
+  - Red Canary (Silver Sparrow analysis, Distribution-file JavaScript execution)
+  - Tony Lambert (forensicitguy, Pirrit installer package analysis)
