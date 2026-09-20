@@ -24,7 +24,6 @@ example_use_cases:
     tactics:
       - Defense Evasion
     tags:
-      - trash
       - indicator-removal
   - name: Verify a scripted cleanup with --stopOnError
     description: >
@@ -36,7 +35,6 @@ example_use_cases:
     tactics:
       - Defense Evasion
     tags:
-      - trash
       - cleanup
 paths:
   - /usr/bin/trash
