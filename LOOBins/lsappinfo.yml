@@ -1,0 +1,152 @@
+name: lsappinfo
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query and control CoreApplicationServices to enumerate running applications, watch which app the user is in, launch hidden processes, and delete files.
+full_description: >-
+  lsappinfo is the command-line client for launchservicesd, the daemon that tracks the live application state of
+  a login session. Apple ships it for debugging LaunchServices. Its query commands report every registered
+  application with its bundle identifier, bundle path, executable path, PID, ASN, application type and hidden
+  state, which is richer than what ps reports and includes UIElement and background-only agents that never
+  appear in the Dock. None of this requires root, an entitlement, or a TCC grant, and none of it produces a user
+  prompt. That makes lsappinfo a quiet first move after code execution - an adversary learns which security
+  product, password manager, VPN client or browser is running before touching anything noisier. The same binary
+  also writes: the listen command turns it into a passive monitor of which application the user brings to the
+  front, the launch command starts a process through launchservicesd instead of the calling shell, and the
+  createFile, removeFile and writePIDToFile commands perform file operations under the name of an Apple-signed
+  system binary. Phil Stokes of SentinelOne documented the discovery half of this in 2019, in an AppleScript
+  post-exploitation payload that shells out to lsappinfo to find the target application and then renders a
+  credential dialog carrying that application's real icon.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate every running application with bundle path, PID and ASN
+    description: >-
+      The list command prints the full application information dictionary that launchservicesd holds for each
+      registered application, and processList prints the same set ordered by ASN. The output carries the bundle
+      identifier, bundle path, executable path, PID, version, architecture, application type (Foreground,
+      Background or UIElement) and whether the application is hidden. Background-only and UIElement agents that
+      have no Dock icon and no window are included, so menu-bar security agents and helper tools are visible
+      here even though a user watching the screen would not see them. No root, no entitlement and no TCC grant
+      is required, and the query is read-only against a daemon rather than against the process table.
+    code: lsappinfo list
+    tactics:
+      - Discovery
+    tags: []
+  - name: Check whether a specific security product is running by bundle identifier
+    description: >-
+      The find command returns the ASN of every application whose information dictionary contains a given
+      key/value pair, so an adversary can test for one vendor's bundle identifier at a time instead of dumping
+      and parsing the whole application list. That keeps the command line short and avoids the large output that
+      a full list produces. The -includeExitedApplications flag additionally matches applications that have
+      already exited but still have running child or coalition processes, which reveals a security agent whose
+      user-facing component has quit while its helpers are still alive.
+    code: lsappinfo find -includeExitedApplications bundleid="com.<VENDOR>.<PRODUCT>"
+    tactics:
+      - Discovery
+    tags: []
+  - name: Query the version of a running application by bundle identifier
+    description: >-
+      Once an ASN or bundle identifier is known, info -only pulls back a single field such as the bundle path or
+      version, which is enough to fingerprint the installed build of a security product before choosing an
+      evasion path.
+    code: lsappinfo info -only version "com.<VENDOR>.<PRODUCT>"
+    tactics:
+      - Discovery
+    tags: []
+  - name: Identify the frontmost application's ASN to tailor a credential prompt
+    description: >-
+      The front command reports the ASN of the application the user is currently working in. An adversary who
+      intends to phish the user's password with a dialog box uses this to time the prompt so it is raised while
+      the victim is already interacting with the impersonated application. SentinelOne's 2019 macOS red team
+      research shows exactly this, with an AppleScript getAppForBundleID handler calling "do shell script my
+      lsappinfo" and matching the target bundle identifier in the output.
+    code: lsappinfo front
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Resolve the frontmost application's ASN to its bundle path
+    description: >-
+      info -only bundlepath resolves an ASN, such as the one returned by front, to that application's bundle path
+      or display name. An adversary uses the real bundle path to read that app's CFBundleIconFile so a fake
+      credential prompt can carry the genuine icon. lsappinfo supplies only the reconnaissance; the dialog itself
+      is raised through a separate mechanism such as osascript.
+    code: lsappinfo info -only bundlepath 0x<ASN>
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Passively record which applications the user switches to
+    description: >-
+      The listen command subscribes to LaunchServices notifications and prints each one with its payload while
+      the tool is executing a wait or forever command. Subscribing to becameFrontmost, launch and death produces
+      a running log of which application the user focuses and when, plus every application start and exit, for
+      as long as the process lives. Equivalent visibility through the Accessibility or Screen Recording APIs
+      would raise a TCC consent dialog; this does not, because it only reads session state from launchservicesd.
+      The resulting timeline tells an adversary when the victim is at the keyboard, when a password manager or
+      VPN client is unlocked, and when the machine is unattended and safe to act on.
+    code: nohup lsappinfo listen +becameFrontmost +launch +death forever >> /tmp/.appact.log 2>&1 &
+    tactics:
+      - Collection
+      - Discovery
+    tags: []
+  - name: Launch a payload through launchservicesd, hidden and off the shell's process tree
+    description: >-
+      The launch command asks CoreApplicationServices to start an application bundle rather than forking from
+      the calling shell, so the new process is parented under launchservicesd and the shell, script interpreter
+      or initial access implant that requested it does not appear as its ancestor. The documented launch
+      modifiers control how it appears - nofront=true keeps it from coming to the front when it finishes
+      launching and launchandhide=true makes it hide itself immediately, so a bundle with a UI starts without
+      one becoming visible. launchWithASLRDisabled=true starts the target with address space layout
+      randomization off, which is useful when the goal is to exploit a separate application rather than run one.
+      The man page notes this is a low-level operation that skips conditions the higher level launch functions
+      handle. It is not a Gatekeeper or quarantine bypass - code signing and quarantine evaluation still apply.
+    code: lsappinfo launch nofront=true launchandhide=true execpath=/Users/<USER>/Library/Application\ Support/.cache/Updater.app/Contents/MacOS/Updater
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Delete forensic artifacts using an Apple-signed binary
+    description: >-
+      Among its uncommon commands lsappinfo exposes removeFile, createFile and writePIDToFile, which delete a
+      file, create a file and write the tool's own PID to a file respectively. These have nothing to do with
+      LaunchServices and give an adversary a generic file primitive that runs under /usr/bin/lsappinfo. Deletion
+      is still bounded by the calling user's permissions and by SIP, so this is not a privilege escalation, but
+      Endpoint Security unlink events and any allowlist keyed on process path attribute the deletion to an
+      Apple-signed system binary instead of to rm or to the adversary's own tooling. It is a practical way to
+      remove a dropped payload, a staging directory marker or a script's own log once collection is finished.
+    code: lsappinfo removeFile /Users/<USER>/Library/Logs/<STAGED_ARTIFACT>.log
+    tactics:
+      - Defense Evasion
+    tags:
+      - delete
+paths:
+  - /usr/bin/lsappinfo
+detections:
+  - name: "Process execution of /usr/bin/lsappinfo with a discovery command (list, processList, visibleProcessList, front or find) where the parent process is a shell, script interpreter or osascript rather than an interactive terminal session"
+    url: N/A
+  - name: "lsappinfo invoked as a child of osascript, or of a JXA or AppleScript runtime - the pattern used by SentinelOne's macOS red team payload to locate the target application before raising a spoofed credential dialog"
+    url: N/A
+  - name: "lsappinfo find command lines containing a bundle identifier belonging to an endpoint security, EDR, password manager or VPN vendor"
+    url: N/A
+  - name: "Long-lived lsappinfo processes whose command line contains listen together with forever or wait, which indicates continuous notification collection rather than a one-shot query"
+    url: N/A
+  - name: "lsappinfo launch command lines containing launchWithASLRDisabled=true, launchandhide=true, or an execpath outside /Applications and /System/Applications"
+    url: N/A
+  - name: "Endpoint Security unlink or create events whose acting process is /usr/bin/lsappinfo, produced by the removeFile, createFile and writePIDToFile commands"
+    url: N/A
+resources:
+  - name: "macOS Red Team: Calling Apple APIs Without Building Binaries"
+    url: https://www.sentinelone.com/blog/macos-red-team-calling-apple-apis-without-building-binaries/
+  - name: lsappinfo(8) manual page
+    url: https://keith.github.io/xcode-man-pages/lsappinfo.8.html
+  - name: "lsappinfo(8) manual page (with listen notification codes and launch modifiers)"
+    url: https://www.manpagez.com/man/8/lsappinfo/
+  - name: "macOS Incident Response | Part 1: Collecting Device, File & System Data"
+    url: https://www.sentinelone.com/labs/macos-incident-response-part-1-collecting-device-file-system-data/
+  - name: Apple Developer Documentation - Launch Services
+    url: https://developer.apple.com/documentation/coreservices/launch_services
+  - name: "MITRE ATT&CK T1010 - Application Window Discovery"
+    url: https://attack.mitre.org/techniques/T1010/
+  - name: "MITRE ATT&CK T1518.001 - Software Discovery: Security Software Discovery"
+    url: https://attack.mitre.org/techniques/T1518/001/
+acknowledgements:
+  - Phil Stokes (SentinelOne) for documenting the lsappinfo-driven application discovery used to build context-aware credential prompts
