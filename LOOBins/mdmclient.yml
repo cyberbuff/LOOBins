@@ -1,0 +1,92 @@
+name: mdmclient
+author: Hare Sudhan (@cyb3rbuff)
+short_description: The macOS MDM client daemon, whose query verbs enumerate a host's management posture.
+full_description: >
+  mdmclient is the built-in Mobile Device Management client daemon on macOS. It is normally
+  launched and supervised by launchd, and it handles communication with an MDM server after a
+  user enrolls by installing a management profile: it receives configuration profiles and
+  commands over Apple Push Notification service and reports device state back. The binary also
+  exposes command-line verbs that locally simulate the queries an MDM server would issue, such
+  as DumpManagementStatus, QueryInstalledProfiles, QueryInstalledApps, QueryDeviceInformation
+  and QuerySecurityInfo. Its own manual page warns that all command arguments are private and
+  may change without notice. For an attacker who already has root on a host, these verbs are a
+  native, on-box way to learn whether the machine is managed, which MDM server owns it, whether
+  it is DEP/ADE enrolled or supervised, what configuration profiles and applications are
+  present, and how the security posture is set. Because the verbs answer these queries locally,
+  that reconnaissance shapes how noisy the attacker can afford to be without generating traffic
+  to the MDM server.
+created: 2026-09-20
+example_use_cases:
+  - name: Determine MDM enrollment and management posture
+    description: >
+      The DumpManagementStatus verb prints the host's management state in property-list form,
+      including whether it is enrolled, the MDM server URL and organization name, the enrollment
+      type (Automated Device Enrollment, Account-Driven Device Enrollment, or profile-based),
+      and supervision and user-approval status. This tells an attacker whether an MDM can push
+      further commands or profiles to the host and who controls it, which informs whether to
+      avoid tripping management-side alerting. In practice the verb requires root to return the
+      full status.
+    code: sudo /usr/libexec/mdmclient DumpManagementStatus
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate installed configuration profiles
+    description: >
+      The QueryInstalledProfiles verb lists the configuration profiles installed on the host,
+      the same data an MDM server would receive from a ProfileList query. Profiles reveal which
+      restrictions, certificate payloads, and management or security-tool configurations are
+      deployed, letting an attacker map the controls in place before acting. Requires root for
+      complete output.
+    code: sudo /usr/libexec/mdmclient QueryInstalledProfiles
+    tactics:
+      - Discovery
+    tags: []
+  - name: Inventory installed applications
+    description: >
+      The QueryInstalledApps verb returns the application inventory that would normally be sent
+      to an MDM server in an InstalledApplicationList query. It gives an attacker a native
+      software inventory of the host, useful for identifying security tooling, target
+      applications, and installed software versions. Requires root.
+    code: sudo /usr/libexec/mdmclient QueryInstalledApps
+    tactics:
+      - Discovery
+    tags: []
+  - name: Collect device identifiers
+    description: >
+      The QueryDeviceInformation verb reports device details such as serial number, model, and
+      OS/build version, mirroring the MDM DeviceInformation query. This provides host
+      identifiers useful for fingerprinting and correlating the machine across an environment.
+      Requires root for full output.
+    code: sudo /usr/libexec/mdmclient QueryDeviceInformation
+    tactics:
+      - Discovery
+    tags:
+      - systeminfo
+  - name: Query the host security posture
+    description: >
+      The QuerySecurityInfo verb returns the security-related state an MDM server would collect
+      via a SecurityInfo query, such as FileVault, firmware password, and related protection
+      status. An attacker can use it to judge which on-disk and boot protections are active
+      before attempting persistence or data theft. Requires root.
+    code: sudo /usr/libexec/mdmclient QuerySecurityInfo
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/libexec/mdmclient
+detections:
+  - name: >
+      Command-line detection: interactive invocation of /usr/libexec/mdmclient with a query verb
+      (DumpManagementStatus, QueryInstalledProfiles, QueryInstalledApps, QueryDeviceInformation,
+      QuerySecurityInfo). mdmclient normally runs as a launchd-managed daemon, so an execution
+      with these arguments is anomalous.
+    url: N/A
+  - name: >
+      Process-lineage detection: mdmclient whose parent process is a shell, terminal, or other
+      interactive process rather than launchd, indicating manual use rather than daemon activity.
+    url: N/A
+resources:
+  - name: "mdmclient - Configuration Profiles documentation (verb reference)"
+    url: https://mosen.github.io/profiledocs/troubleshooting/mdmclient.html
+  - name: "Der Flounder: Using mdmclient DumpManagementStatus to get information about MDM management"
+    url: https://derflounder.wordpress.com/2025/03/16/using-usr-libexec-mdmclient-dumpmanagementstatus-to-get-information-about-mdm-management/
