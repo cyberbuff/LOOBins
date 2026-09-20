@@ -1,0 +1,80 @@
+name: productbuild
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Build a macOS Installer product archive (.pkg) from component packages, a Distribution XML, scripts and Installer plugins.
+full_description: The productbuild binary builds a flat product archive - the outer .pkg that the macOS Installer opens - from one or more component packages produced by pkgbuild(1), a Distribution XML file, a resources directory, a scripts directory and an Installer plugin directory. Unlike pkgbuild, which only produces a component package and its pre/postinstall scripts, productbuild is what gives an attacker access to the Installer's own extension points - the Distribution file's JavaScript, the programs reachable from that JavaScript via system.run(), and native Objective-C Installer plugin bundles. Code reached through those extension points runs inside the Apple-signed Installer process during the installation check, before the user has authorised anything and before any payload is written to disk, which produces a different and quieter telemetry pattern than the familiar package_script_service to preinstall/postinstall tree. productbuild --sign also signs the entire product, including component packages that were never signed themselves, so one abused Developer ID identity covers everything inside the archive.
+created: 2026-09-20
+example_use_cases:
+  - name: Execute commands from the Distribution file's JavaScript before the payload installs
+    description: The Distribution XML consumed by --distribution can carry an installation-check element whose script attribute names a JavaScript function, defined in a script element in the same file. That function runs in the Installer's JavaScript context during the installation check. Calling system.run('/bin/bash', '-c', <COMMAND>) from it executes an arbitrary shell command as a child of the Apple-signed Installer process, producing an Installer -> bash tree rather than the package_script_service -> preinstall/postinstall tree that installer detections are usually written against, and it fires before the payload is laid down or the user authenticates. Running a program outside the product archive this way requires allow-external-scripts="yes" on the distribution's options element; Apple has deprecated that attribute, warns that it will break installability in a future macOS release, and reserves the right to refuse notarization of a product that sets it. The commands run as the console user, not as root. Silver Sparrow used exactly this construction.
+    code: productbuild --distribution Distribution.xml --package-path ./pkgs --identifier com.vendor.update --version 1.0 Update.pkg
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Stage a payload executable inside the product and launch it from the Distribution JavaScript
+    description: The --scripts flag copies the contents of a directory into the product archive specifically, per the man page, "for use by system.run() commands in the distribution". A program staged this way is referenced by bare name from the installation-check JavaScript - system.run('<SCRIPT_NAME>') - so the attacker never has to name an external path and therefore does not need the deprecated allow-external-scripts option. The payload travels inside the .pkg, is extracted to a temporary location by the Installer and runs as the console user during the installation check. The offensive tool Mystikal generates packages in exactly this shape.
+    code: productbuild --distribution Distribution.xml --scripts ./Scripts --package-path ./pkgs --identifier com.vendor.update --version 1.0 Update.pkg
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Run native code by embedding a malicious Installer plugin bundle
+    description: --plugins copies a directory containing Installer plugin bundles and an InstallerSections.plist into the product archive. Installer plugins are Cocoa bundles that add custom panes to the Installer UI, they are only supported in product archives (not in plain component packages built by pkgbuild), and their Objective-C code is loaded and executed by the Installer while the installation is being presented. That gives an attacker native macOS API access inside an Apple-signed host process without any pre/postinstall script and without dropping a Mach-O the user ever sees. On current macOS the plugin is loaded by the Installer's InstallerRemotePluginService XPC helper and runs as the logged-in user, not as root. Chris Ross documented the technique, and Mystikal automates package generation for it.
+    code: productbuild --identifier com.vendor.helper --version 1.0 --package ./pkgs/component.pkg --plugins ./plugins Helper.pkg
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Sign one product archive to cover unsigned attacker component packages
+    description: --sign adds a digital signature to the finished product archive using an identity in an accessible keychain, --keychain selects the keychain to search and --cert embeds intermediate certificates needed to chain to a trusted root. The man page states that component packages do not need to be signed before being added, because the product archive's signature protects the entire product including those packages. An attacker who has obtained or enrolled a single Developer ID Installer identity therefore only has to sign the outer archive once to make an arbitrary set of unsigned attacker-built component packages, scripts and Installer plugins present as one trusted product. --timestamp=none lets the archive be signed without contacting Apple's timestamp server, which suits an offline build host. Signing is not notarization - a signed but un-notarized product is still blocked by Gatekeeper on a default system. Both Silver Sparrow variants shipped with Developer ID signatures that Apple later revoked.
+    code: 'productbuild --distribution Distribution.xml --package-path ./pkgs --sign "Developer ID Installer: <IDENTITY_NAME>" --keychain <KEYCHAIN_PATH> --timestamp=none Update.pkg'
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags: []
+  - name: Synthesize a distribution from a legitimate package as a template to trojanize
+    description: productbuild --synthesize writes out the distribution file that would have been generated for the given component packages instead of building a product. Pointed at a vendor's unpacked component packages, it reproduces that product's identifiers, version constraints and choices-outline, giving an attacker a structurally valid distribution to edit - adding an installation-check element and a script element - before rebuilding the product with --distribution. The rebuilt archive keeps the legitimate product's naming and install behaviour while carrying attacker JavaScript, which is a cheaper and more convincing masquerade than authoring a distribution from scratch. This is build-host preparation and touches no victim system.
+    code: productbuild --synthesize --package ./extracted/vendor-core.pkg --package ./extracted/vendor-extras.pkg Distribution.xml
+    tactics:
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/productbuild
+detections:
+  - name: "Jamf Protect: Installer Initiated Network Connection (curl or nscurl with a shell parent and Installer as the responsible process - the Distribution JavaScript pattern)"
+    url: https://github.com/jamf/jamfprotect/blob/main/custom_analytic_detections/installer_initiated_network_connection.yaml
+  - name: "Elastic Detection Rules: Suspicious Installer Package Spawns Network Event"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/execution_installer_package_spawned_network_event.toml
+  - name: "Sigma Rules: Suspicious Installer Package Child Process"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_installer_susp_child_process.yml
+  - name: "Process lineage: Installer (not package_script_service) spawning bash, sh, python, osascript, curl or nscurl, with no preinstall or postinstall string in the command line - distribution JavaScript execution rather than an install script"
+    url: N/A
+  - name: "Endpoint Security process events whose responsible or origin binary is /System/Library/CoreServices/Installer.app/Contents/XPCServices/InstallerRemotePluginService-arm64.xpc (or -x86_64.xpc), indicating an Installer plugin bundle was loaded"
+    url: N/A
+  - name: "Static inspection of submitted .pkg files: expand the product archive and flag any Distribution file containing a script element, an installation-check or volume-check script attribute, a system.run call, or options allow-external-scripts=\"yes\""
+    url: N/A
+  - name: "Command line: productbuild invoked with --distribution together with --scripts or --plugins on a host that is not a known build system"
+    url: N/A
+resources:
+  - name: "productbuild(1) man page"
+    url: https://keith.github.io/xcode-man-pages/productbuild.1.html
+  - name: "Apple Distribution XML Reference (installation-check, script, options allow-external-scripts)"
+    url: https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html
+  - name: "Apple Installer JavaScript Reference"
+    url: https://developer.apple.com/documentation/installerjs
+  - name: "Clipping Silver Sparrow's wings: Outing macOS malware before it takes flight (Red Canary)"
+    url: https://redcanary.com/blog/clipping-silver-sparrows-wings/
+  - name: "Malicious Installer Plugins (Chris Ross, xorrior)"
+    url: https://xorrior.com/malicious-installer-plugins/
+  - name: "Native Code Execution with Installer Plugins for Initial Access (Objective by the Sea v4)"
+    url: https://objectivebythesea.org/v4/talks/OBTS_v4_cRoss.pdf
+  - name: "Mystikal: macOS initial access payload generator (Installer_JS, Installer_JS_Script and Installer_Plugins modules)"
+    url: https://github.com/D00MFist/Mystikal
+  - name: "Introducing Mystikal (SpecterOps)"
+    url: https://posts.specterops.io/introducing-mystikal-4fbd2f7ae520
+  - name: "MITRE ATT&CK T1546.016 - Event Triggered Execution: Installer Packages"
+    url: https://attack.mitre.org/techniques/T1546/016/
+acknowledgements:
+  - Red Canary (Silver Sparrow Distribution-file JavaScript analysis)
+  - Chris Ross (@xorrior, Installer plugin native code execution research)
+  - Leo Pitt (@D00MFist, Mystikal installer package generation)
