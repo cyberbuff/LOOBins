@@ -1,0 +1,96 @@
+name: dsimport
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Import user, group, and other records into an Open Directory node from a flat file.
+full_description: >-
+  dsimport is the command-line counterpart to dsexport: it reads a delimited or
+  record-format file and writes the parsed records into an Open Directory node,
+  most commonly the local node /Local/Default. Administrators use it to bulk
+  provision users and groups. Because it authenticates to the directory node
+  with a supplied admin credential (--username/--password) and can run entirely
+  non-interactively, an attacker who already holds admin or root can use it to
+  create a backdoor local account, pin privileged attributes onto imported
+  records with --force, or append an account to the admin group in a single
+  invocation, rather than issuing the sequence of dscl and dseditgroup commands
+  that defenders more commonly watch for. It can also target a remote node with
+  --remotehost, making it useful for lateral provisioning against another Mac.
+created: 2026-09-20
+example_use_cases:
+  - name: Create a hidden local backdoor account
+    description: >-
+      dsimport parses a StandardUser-formatted file and writes Users records
+      into the local Open Directory node. Assigning a UniqueID below 500 in the
+      import record hides the account from the login window (macOS omits
+      sub-500 users by default), yielding a persistent local account that is not
+      visible in the standard user list. Writing to /Local/Default requires root
+      or an admin credential supplied via --username/--password to authenticate
+      to the node.
+    code: dsimport <IMPORT_FILE> /Local/Default M --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Persistence
+    tags: []
+  - name: Force a root-equivalent UID onto imported records
+    description: >-
+      The --force option overwrites a named attribute for every record in the
+      import, ignoring whatever value the file specified. Forcing
+      dsAttrTypeStandard:UniqueID to 0 makes each imported user share root's UID
+      and therefore run with root privileges. This requires an admin credential
+      to write to the node and produces an account that is privileged despite
+      appearing ordinary in the import file.
+    code: dsimport <IMPORT_FILE> /Local/Default M --username <ADMIN_USER> --password <ADMIN_PASS> --force dsAttrTypeStandard:UniqueID 0 --template StandardUser
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags: []
+  - name: Append an account to the admin group
+    description: >-
+      Using a StandardGroup-formatted file (RecordName, Password, PrimaryGroupID,
+      GroupMembership) with the A (append) conflict flag, dsimport adds members
+      to an existing group record without recreating it. Targeting the admin
+      group grants the listed account administrative rights. As with all local
+      writes, an admin credential is required to authenticate to the node.
+    code: dsimport <ADMIN_GROUP_FILE> /Local/Default A --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardGroup
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags:
+      - groups
+  - name: Overwrite an existing account's attributes
+    description: >-
+      The O (overwrite) conflict flag deletes all previous attribute values on
+      any record whose name, UID, or GID matches, then replaces them with the
+      import data. An attacker can use this to reset an existing admin account's
+      password, shell, or home directory to attacker-controlled values while
+      keeping the familiar account name. Combined with --crypt, passwords in the
+      import file are treated as crypt hashes. Requires an admin credential to
+      write to the node.
+    code: dsimport <IMPORT_FILE> /Local/Default O --crypt --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Provision records on a remote Open Directory node
+    description: >-
+      --remotehost directs the import at a directory node on another host, with
+      --remoteusername/--remotepassword authenticating the network connection.
+      This lets an attacker with valid directory admin credentials create or
+      modify accounts on a remote Mac from their own host, without an
+      interactive session on the target.
+    code: dsimport <IMPORT_FILE> /Local/Default M --remotehost <TARGET_IP> --remoteusername <ADMIN_USER> --remotepassword <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Lateral Movement
+      - Persistence
+    tags: []
+paths:
+  - /usr/bin/dsimport
+detections:
+  - name: "Process execution: /usr/bin/dsimport invoked with an Open Directory node path (e.g. /Local/Default) and a conflict-resolution flag (O/M/A/I/N), especially alongside --password or --force"
+    url: N/A
+  - name: "File artifact: dsimport writes an operation log to ~/Library/Logs/ImportExport listing created, changed, and rejected records; unexpected entries indicate a record import"
+    url: N/A
+  - name: "OpenDirectory record change: monitor for new local Users records or changes to the admin group's GroupMembership following a dsimport invocation"
+    url: N/A
+resources:
+  - name: dsimport(1) manual page
+    url: https://keith.github.io/xcode-man-pages/dsimport.1.html
+  - name: "MITRE ATT&CK T1136.001: Create Account - Local Account"
+    url: https://attack.mitre.org/techniques/T1136/001/
