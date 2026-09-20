@@ -1,0 +1,88 @@
+name: mount_apfs
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Mount an APFS volume or a local APFS snapshot at an arbitrary path.
+full_description: >-
+  mount_apfs is the APFS mount helper shipped inside the apfs.fs filesystem
+  bundle. Per its man page it is normally executed by diskarbitrationd(8) or
+  mount(8), and it attaches either an APFS volume device node or a named APFS
+  snapshot of an already-mounted volume to a directory. Two documented
+  behaviours make it useful to an attacker. First, TCC (Transparency, Consent
+  and Control) privacy protections are not enforced against files read through a
+  mounted local snapshot, so mounting a Time Machine local snapshot of the data
+  volume exposes protected paths such as the user TCC database, Mail, Messages
+  and Safari history. Second, the mount(8) noowners option tells the kernel to
+  ignore the ownership field for the whole volume, which makes every object
+  appear owned by the calling user. Creating and listing local snapshots with
+  tmutil is available to any user, so the snapshot-mount path was originally
+  reachable from an unprivileged account (CVE-2020-9771). Apple's fix, shipped in
+  macOS Catalina 10.15.4 and in a Mojave security update, gates the read on the
+  calling process holding Full Disk Access rather than blocking the mount, so the
+  technique still applies wherever Terminal or a management agent legitimately
+  holds that grant.
+created: 2026-09-20
+example_use_cases:
+  - name: Read TCC-protected data through a mounted Time Machine snapshot
+    description: >-
+      Local Time Machine snapshots can be created with "tmutil localsnapshot" and
+      listed with "tmutil listlocalsnapshots /", both available to any user on a
+      host where Time Machine is configured. Passing a snapshot name to the
+      mount_apfs -s form mounts that snapshot of the data volume at an
+      attacker-chosen directory. TCC does not enforce privacy protections against
+      files read from a mounted local snapshot, so locations such as the user TCC
+      database, Messages, Mail and Safari history are readable underneath the
+      mount point. Before the CVE-2020-9771 fix this worked from an unprivileged
+      account; afterwards the read succeeds when the calling process already holds
+      Full Disk Access.
+    code: mount_apfs -o noowners -s com.apple.TimeMachine.<SNAPSHOT_DATE>.local /System/Volumes/Data /tmp/snap
+    tactics:
+      - Credential Access
+      - Collection
+      - Defense Evasion
+    tags: []
+  - name: Ignore on-disk file ownership when mounting an APFS volume
+    description: >-
+      The mount(8) noowners option makes all objects on the mounted volume appear
+      as owned by user ID 99, which the kernel interprets as the current effective
+      user ID. Applied to an APFS volume device node taken from diskutil list - an
+      attached external disk, a second internal volume, or a disk image volume -
+      this reads files belonging to other local users without changing any
+      permission on disk. Invoking the helper directly also skips diskarbitrationd,
+      which normally performs the mount.
+    code: mount_apfs -o rdonly,noowners /dev/disk<N>s<M> /tmp/mnt
+    tactics:
+      - Privilege Escalation
+      - Collection
+    tags: []
+  - name: Keep the mount out of the Finder with nobrowse
+    description: >-
+      The mount(8) nobrowse option marks the mount point as not visible via the
+      GUI, so the mounted snapshot or volume does not appear on the Desktop or in
+      the Finder sidebar. Combined with a mount point outside /Volumes this keeps
+      collection from a snapshot out of a logged-in user's view, though the mount
+      is still listed by mount(8) and by the filesystem APIs.
+    code: mount_apfs -o nobrowse,noowners,rdonly -s com.apple.TimeMachine.<SNAPSHOT_DATE>.local /System/Volumes/Data /tmp/snap
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /System/Library/Filesystems/apfs.fs/Contents/Resources/mount_apfs
+  - /sbin/mount_apfs
+detections:
+  - name: "Elastic: TCC Bypass via Mounted APFS Snapshot Access"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/defense_evasion_tcc_bypass_mounted_apfs_access.toml
+  - name: "Command line detection: mount_apfs invoked with the noowners option or the -s snapshot form by a process other than diskarbitrationd or mount(8)"
+    url: N/A
+  - name: "Process lineage detection: mount_apfs execution preceded by tmutil localsnapshot on the same host"
+    url: N/A
+resources:
+  - name: "CVE-2020-9771 - mount_apfs TCC bypass and privilege escalation (Csaba Fitzl, theevilbit)"
+    url: https://theevilbit.github.io/posts/cve_2020_9771/
+  - name: "Bypassing macOS TCC User Privacy Protections By Accident and Design (SentinelLabs)"
+    url: https://www.sentinelone.com/labs/bypassing-macos-tcc-user-privacy-protections-by-accident-and-design/
+  - name: "Return of the mac(OS): TCC Database Manipulation (Interpres Security)"
+    url: https://web.archive.org/web/20240411112413/https://interpressecurity.com/resources/return-of-the-macos-tcc/
+  - name: "MITRE ATT&CK T1006: Direct Volume Access"
+    url: https://attack.mitre.org/techniques/T1006/
+acknowledgements:
+  - Csaba Fitzl (@theevilbit) - CVE-2020-9771 research
+  - Marina Liang (Interpres Security) - macOS TCC manipulation research
