@@ -1,0 +1,81 @@
+name: kmutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Manage, inspect, and load macOS kernel extensions and kext collections.
+full_description: kmutil is the KernelManagement command-line tool for kernel extensions on macOS 11 and later, and the supported replacement for kextload, kextunload, and kextcache. It loads and unloads kexts, has kernelmanagerd rebuild the auxiliary kext collection, reports which kexts and codeless extensions the kernel has loaded, and - from Recovery Mode - installs custom boot objects and clears third-party kext approvals. Each of those has an offensive counterpart. showloaded inventories kernel-resident security tooling without touching a third-party binary, unload stops a legacy security kext or an individual IOService, load is the documented path for installing attacker-supplied kernel code, and the Recovery-only subcommands can place code ahead of the operating system in the boot chain or strip every third-party kext approval on the machine. Loading a third-party kext is heavily gated - it needs root, an administrator approval prompt, a reboot, and, on Apple silicon, a machine already in Reduced Security - but kmutil ships with the base OS and is the expected tool for these operations, so its execution blends into legitimate driver installation and support workflows.
+created: 2026-09-20
+example_use_cases:
+  - name: Inventory loaded kernel extensions to locate security tooling
+    description: The showloaded subcommand queries the kernel directly for load information. --list-only --no-kernel-components lists non-codeless kexts with their bundle identifiers, versions, load addresses, and reference counts, which identifies any legacy kernel-resident endpoint security product. This does not cover System Extensions, which are enumerated with systemextensionsctl instead.
+    code: kmutil showloaded --list-only --no-kernel-components
+    tactics:
+      - Discovery
+    tags: []
+  - name: Inventory codeless DriverKit extensions in detail
+    description: Codeless kexts and DriverKit extensions (dexts) are excluded from the default showloaded output and require --collection codeless --show all to enumerate. An attacker runs this after the default listing to pick up DriverKit-based security tooling that the non-codeless query misses. This still does not cover System Extensions, which are enumerated with systemextensionsctl instead.
+    code: kmutil showloaded --collection codeless --show all
+    tactics:
+      - Discovery
+    tags: []
+  - name: Unload a kernel extension to disable a kernel-resident security product
+    description: The unload subcommand invokes a kext's stop function and ends its IOKit lifecycle, which stops a legacy security kext from observing the system. It requires root, and it fails if another loaded kext holds a reference to the target - the Refs column of showloaded indicates whether an unload will succeed. The kext is not removed from its collection, so the change does not survive a reboot and the kext can be reloaded without one. This applies only to products still shipping a kext rather than a System Extension.
+    code: sudo kmutil unload --bundle-identifier <TARGET_KEXT_BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Terminate IOService instances without unloading the kext
+    description: unload --class-name terminates all instances of a named IOService class while leaving the kext loaded and its personalities in place. The driver stops doing work but remains visible in showloaded and kextstat output. Requires root.
+    code: sudo kmutil unload --class-name <TARGET_IOSERVICE_CLASS>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Terminate IOService instances and remove their personalities
+    description: unload --personalities-only terminates the services associated with a kext and removes their personalities without unloading the kext. This leaves the kext visible while preventing its driver from doing work. Requires root.
+    code: sudo kmutil unload --personalities-only --bundle-identifier <TARGET_KEXT_BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Install an attacker-supplied kernel extension for boot persistence
+    description: load stages a kext bundle from disk and, if it is not already in the auxiliary kext collection, has kernelmanagerd rebuild that collection so the kext loads at every subsequent boot. This is not silent, and the prerequisites are steep. It requires root; with SIP enabled the kext's signature is verified before it is added to the collection; kernelmanagerd prompts a logged-in administrator to approve the rebuild; the machine must reboot before the kext loads; and on Apple silicon it must already be in Reduced Security with third-party kexts enabled. kmutil reports the last two states through its exit code - 27 means user approval is required and 28 means a reboot is required.
+    code: sudo kmutil load --bundle-path /Library/Extensions/<PAYLOAD>.kext
+    tactics:
+      - Persistence
+      - Privilege Escalation
+    tags: []
+  - name: Install a custom boot object to gain pre-boot code execution on Apple silicon
+    description: The Recovery-only configure-boot subcommand installs a Mach-O that iBoot will load and start, which places attacker-controlled code ahead of the operating system in the boot chain. Apple documents it as the tool that sets the CustomOS Image4 manifest hash in a Mac's LocalPolicy. The prerequisites are interactive - the machine must be booted into Recovery, an administrator must already have selected Reduced Security in Startup Security Utility, and kmutil prompts for confirmation before downgrading the machine further to Permissive Security. It therefore needs physical access or a management path that can force a Recovery boot, not remote code execution alone.
+    code: kmutil configure-boot --custom-boot-object <PAYLOAD_MACHO> --volume /Volumes/<TARGET_VOLUME>
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Strip all third-party kext approvals with trigger-panic-medic
+    description: trigger-panic-medic is intended to recover a machine from a kext that panics at boot. It removes the auxiliary kext collection and revokes every kext approval on the next boot, which on a managed fleet drops any third-party kernel extension the organization deployed, including a security vendor's kext, and forces a user re-approval prompt before any of them can load again. It runs only in Recovery Mode and so requires the same physical or management access as configure-boot.
+    code: kmutil trigger-panic-medic
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/kmutil
+detections:
+  - name: "EndpointSecurity: subscribe to ES_EVENT_TYPE_NOTIFY_KEXTLOAD and ES_EVENT_TYPE_NOTIFY_KEXTUNLOAD to observe kext load and unload regardless of which binary requested it"
+    url: https://developer.apple.com/documentation/endpointsecurity/es_event_type_t
+  - name: "Process execution: kmutil invoked with the load, unload, or configure-boot subcommand outside a known driver-installation or MDM workflow"
+    url: N/A
+  - name: "Process execution: kmutil showloaded with --collection codeless or --show all, which enumerates DriverKit extensions and is uncommon outside developer debugging"
+    url: N/A
+  - name: "Unified log: kernelmanagerd auxiliary kext collection rebuild and kext staging events, reachable via the kmutil log subcommand's predicate; an unexplained AuxKC rebuild precedes kext-based boot persistence"
+    url: N/A
+  - name: "Boot policy monitoring: report on Macs whose startup security policy has moved from Full Security to Reduced or Permissive Security, which is a prerequisite for third-party kext loading and for configure-boot"
+    url: https://support.apple.com/guide/security/startup-disk-security-policy-control-sec7d92dc49f/web
+resources:
+  - name: "kmutil(8) man page"
+    url: https://keith.github.io/xcode-man-pages/kmutil.8.html
+  - name: "MITRE ATT&CK T1547.006 - Boot or Logon Autostart Execution: Kernel Modules and Extensions"
+    url: https://attack.mitre.org/techniques/T1547/006/
+  - name: "Atomic Red Team T1547.006 - MacOS - Load Kernel Module via kextload and kmutil"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1547.006/T1547.006.md
+  - name: "Apple Platform Security - Contents of a LocalPolicy file for a Mac with Apple silicon (the CustomOS Image4 manifest hash set by kmutil configure-boot)"
+    url: https://support.apple.com/guide/security/contents-a-localpolicy-file-mac-apple-silicon-secc745a0845/web
+  - name: "Apple Platform Security - Boot process for a Mac with Apple silicon"
+    url: https://support.apple.com/guide/security/boot-process-secac71d5623/web
