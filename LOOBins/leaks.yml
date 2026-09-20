@@ -1,0 +1,88 @@
+name: leaks
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read another process's heap memory and export it as a portable memory graph.
+full_description: |
+  The leaks binary ships with macOS as a developer memory-debugging tool. Its documented purpose is to
+  search a target process's memory for malloc buffers that are no longer referenced, but to do that it
+  first reads the entire heap of the target and, for a live process, prints the contents of allocations
+  by default. It can also serialise the full memory state of a process to a ".memgraph" file with
+  -outputGraph, which can then be copied off the host and mined offline with tools such as heap,
+  stringdups and vmmap. Because application heaps routinely hold passwords, session tokens, API keys and
+  decrypted data in plaintext, leaks gives an attacker a signed, on-disk, Apple-provided way to scrape
+  secrets from a running process without dropping a custom memory-dumping tool. Reading another
+  process requires acquiring its task port: a same-user process that lacks the hardened runtime or was
+  signed with the get-task-allow entitlement (for example a debug build) can be read without root, while
+  most other processes require root. SIP-protected platform binaries cannot be read even as root.
+created: 2026-09-20
+example_use_cases:
+  - name: Scrape secrets from a live process's heap
+    description: >-
+      Run against a process by pid or partial executable name. For a live target, leaks prints
+      descriptions of allocation contents by default (equivalent to -fullContent), so piping the output
+      through grep surfaces plaintext passwords, tokens and keys that the application is holding in
+      memory. The operator must be able to obtain the target's task port: this works without root only
+      when the target is the operator's own process and either lacks the hardened runtime or carries the
+      get-task-allow entitlement; otherwise root is required, and SIP-protected system processes cannot
+      be read at all.
+    code: leaks -fullContent <TARGET_PROCESS_NAME> 2>/dev/null | grep -iE 'password|token|bearer|api[_-]?key'
+    tactics:
+      - Credential Access
+      - Collection
+    tags: []
+  - name: Export a process memory graph for offline analysis and exfiltration
+    description: >-
+      The -outputGraph option serialises all VM and malloc nodes of the target, plus the references
+      between them, into a portable ".memgraph" file. Adding -fullContent stores the actual object
+      contents rather than only read-only descriptions, so the resulting file can be copied to attacker
+      infrastructure and mined at leisure with heap, stringdups or the Xcode Memory Graph Debugger,
+      moving the credential-recovery work off the victim host. The same task-port and privilege
+      constraints as a live read apply.
+    code: leaks -outputGraph /tmp/<TARGET>.memgraph -fullContent <TARGET_PID>
+    tactics:
+      - Collection
+      - Credential Access
+    tags: []
+  - name: Capture the memory of a command launched under leaks
+    description: >-
+      The -atExit option launches a command and runs leaks against it when the process exits,
+      automatically setting MallocStackLogging so allocation backtraces are captured. This lets an
+      operator wrap a short-lived helper or credential-handling utility they can start themselves and
+      collect its heap contents at teardown, without needing to acquire the task port of a
+      pre-existing process. -atExit must be the last option, followed by -- and the command.
+    code: leaks -quiet -atExit -- <COMMAND_TO_LAUNCH> <ARGS>
+    tactics:
+      - Collection
+      - Execution
+    tags: []
+  - name: Enumerate a target's heap objects to locate credential-bearing types
+    description: >-
+      The -referenceTree option prints a top-down tree of every malloc allocation and dynamically
+      allocated VM region in the process, and accepts a class-name regular expression to filter it. An
+      operator can use it to map what a target process holds in memory and narrow to object classes that
+      commonly carry secrets before extracting their contents, for example Foundation string and data
+      buffers. Requires the same task-port access as any other live read.
+    code: leaks -referenceTree='NSString|NSData|CFData' <TARGET_PID>
+    tactics:
+      - Discovery
+      - Collection
+    tags: []
+paths:
+  - /usr/bin/leaks
+detections:
+  - name: "Process execution: /usr/bin/leaks invoked with a pid, process name, or -atExit argument, especially targeting a process the invoking user does not own or a credential-handling daemon."
+    url: N/A
+  - name: "File creation: creation of files with the .memgraph suffix, or use of the -outputGraph argument on a leaks command line, indicating a process memory graph is being written to disk."
+    url: N/A
+  - name: "Endpoint Security telemetry: task-port acquisition (task_for_pid) against sensitive processes by non-debugger binaries; ESF exposes process, path, signing and UID context for correlation."
+    url: https://labs.withsecure.com/publications/esfang-exploring-the-macos-endpoint-security-framework-for-threat-detection
+resources:
+  - name: "leaks(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/leaks.1.html
+  - name: "Apple Developer: Finding Memory Leaks"
+    url: https://developer.apple.com/library/archive/documentation/Performance/Conceptual/ManagingMemory/Articles/FindingLeaks.html
+  - name: "Broken isolation - draining your credentials from popular macOS password managers (Objective by the Sea v7, Wojciech Reguła)"
+    url: https://objectivebythesea.org/v7/talks/OBTS_v7_wRegula.pdf
+  - name: "macOS Memory Dumping (HackTricks)"
+    url: https://hacktricks.wiki/en/macos-hardening/macos-security-and-privilege-escalation/macos-files-folders-and-binaries/macos-memory-dumping.html
+  - name: "MITRE ATT&CK T1003: OS Credential Dumping"
+    url: https://attack.mitre.org/techniques/T1003/
