@@ -1,0 +1,74 @@
+name: osadecompile
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Recover AppleScript source text from compiled OSA script files.
+full_description: |
+  osadecompile is a command-line utility bundled with macOS that writes the source text of a
+  compiled Open Scripting Architecture (OSA) script to standard output. It is the inverse of
+  osacompile, and is effectively the same decompilation that Script Editor performs when it opens
+  a .scpt file. It takes a single file argument and has no options; the language component is
+  determined from the file's contents. It is attractive to an attacker because macOS admin,
+  vendor, and MDM automation is frequently distributed as compiled .scpt or .scptd files, and
+  these routinely embed credentials, API tokens, and internal hostnames that a single osadecompile
+  invocation prints in clear text. It only recovers source from scripts that still carry it:
+  scripts saved as execute-only (compiled with osacompile -x, often called run-only) have their
+  source stripped, and osadecompile returns errOSASourceNotAvailable (-1756) for those.
+created: 2026-09-20
+example_use_cases:
+  - name: Extract embedded secrets from a compiled automation script
+    description: |
+      Admin and vendor automation shipped as compiled AppleScripts often embeds passwords, API
+      keys, and internal hostnames. osadecompile prints the recovered source to stdout, exposing
+      those secrets in clear text. Prerequisites are read access to the file and that the script
+      still retains its source; scripts saved execute-only (osacompile -x) cannot be recovered and
+      return errOSASourceNotAvailable.
+    code: osadecompile /Library/Scripts/<AUTOMATION>.scpt
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Recover the logic of a compiled persistence script
+    description: |
+      LaunchAgents and LaunchDaemons commonly reference a compiled .scpt in their ProgramArguments.
+      After locating the referenced path in the plist, osadecompile reveals the script's behaviour,
+      including hardcoded command-and-control hosts and file paths, without executing it. This is a
+      read-only inspection of a file the attacker already has access to.
+    code: osadecompile ~/Library/Application\ Scripts/<BUNDLE_ID>/<SCRIPT>.scpt
+    tactics:
+      - Discovery
+    tags: []
+  - name: Read the compiled script inside an application applet bundle
+    description: |
+      AppleScript applets and droplets store their compiled script at
+      Contents/Resources/Scripts/main.scpt inside the .app bundle. osadecompile reads that path
+      directly to reveal the applet's automation logic and any embedded secrets, without launching
+      the application.
+    code: osadecompile "/Applications/<APPLET>.app/Contents/Resources/Scripts/main.scpt"
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Batch-decompile a user's AppleScript stores
+    description: |
+      Iterating the compiled scripts under a user's Scripts and Application Scripts directories and
+      decompiling each one harvests credentials and internal hostnames across many files in a single
+      pass. osadecompile prints the source of every script that retains it and errors on any saved
+      execute-only. The traversal is read-only.
+    code: find ~/Library/Scripts ~/Library/Application\ Scripts -name '*.scpt' -exec osadecompile {} \;
+    tactics:
+      - Collection
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/osadecompile
+detections:
+  - name: "Process execution: monitor for /usr/bin/osadecompile invocations, which are rare outside developer and malware-analysis workflows"
+    url: N/A
+  - name: "Process and file telemetry: osadecompile reading .scpt or .scptd files under /Library, /Applications, or LaunchAgents/LaunchDaemons paths, correlated with the reading process"
+    url: N/A
+resources:
+  - name: "osadecompile(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/osadecompile.1.html
+  - name: "FADE DEAD | Adventures in Reversing Malicious Run-Only AppleScripts"
+    url: https://www.sentinelone.com/labs/fade-dead-adventures-in-reversing-malicious-run-only-applescripts/
+acknowledgements:
+  - Phil Stokes (SentinelLabs) - documenting osadecompile's inability to recover source from run-only AppleScripts
