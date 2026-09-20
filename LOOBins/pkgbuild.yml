@@ -1,0 +1,57 @@
+name: pkgbuild
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Build a macOS Installer component package (.pkg) from on-disk files and install scripts.
+full_description: The pkgbuild binary is a command-line utility that builds a flat macOS Installer component package (.pkg) from a directory tree, one or more bundles, or a scripts folder. It ships at /usr/bin/pkgbuild on stock macOS, so no Xcode installation is needed to build a package. Attackers use it on a build machine to turn a shell script into an installer whose preinstall and postinstall scripts run with root privileges when a victim installs the package, and to sign that package so it presents as legitimate software. Because the scripts execute through the macOS Installer rather than a shell the user launched, packaged installers are a recurring delivery and privilege-escalation route in macOS malware.
+created: 2026-09-20
+example_use_cases:
+  - name: Weaponize a shell script as a root-executing installer package
+    description: A script named preinstall or postinstall in the directory passed to --scripts runs as the top-level script of the package pkgbuild produces; the attacker stages that script and marks it executable before packaging. pkgbuild --nopayload --scripts then builds a package that contains no files, only the postinstall script. The Installer executes that script as root through its package_script_service helper once the victim authorizes the install, so the shell command placed in postinstall runs with elevated privileges. The package still has to be delivered to and opened by the victim, and a quarantined package that is neither signed nor notarized is blocked by Gatekeeper on a default system.
+    code: pkgbuild --nopayload --scripts scripts --identifier com.apple.update --version 1.0 Update.pkg
+    tactics:
+      - Execution
+      - Privilege Escalation
+      - Resource Development
+    tags: []
+  - name: Drop a payload with the package and launch or persist it from postinstall
+    description: pkgbuild --root archives a staged directory tree as the payload, --install-location sets where its contents are written on the target, and --scripts supplies the postinstall script that runs once the files have landed. An attacker stages a LaunchDaemon property list and its executable in the root tree and has postinstall load the job, so the payload is written to disk and registered for persistence during a single install. Payload files are archived as root:wheel by default, which is the ownership launchd requires of a system LaunchDaemon; --ownership preserve instead archives the UID and GID of the staged files. FlexibleFerret, part of the DPRK 'Contagious Interview' campaign, was delivered as an installer package whose postinstall script executed components dropped under /var/tmp.
+    code: pkgbuild --root ./payload_root --install-location /Library --scripts ./scripts --identifier com.vendor.helper --version 1.0 Helper.pkg
+    tactics:
+      - Persistence
+      - Privilege Escalation
+      - Execution
+    tags: []
+  - name: Sign a malicious package to satisfy Gatekeeper
+    description: pkgbuild --sign adds a digital signature from an identity in an accessible keychain, and --keychain points at a specific keychain to search. A package signed with a stolen or abused Developer ID presents as software from a known developer instead of triggering the warning an unsigned package produces. Both Silver Sparrow installer packages were signed with Apple Developer IDs that were later revoked. Signing requires the attacker to hold the signing identity, and it does not notarize the package, which current macOS also checks before allowing a quarantined package to install.
+    code: 'pkgbuild --nopayload --scripts scripts --identifier com.vendor.update --version 1.0 --sign "Developer ID Installer: <IDENTITY_NAME>" --keychain <KEYCHAIN_PATH> Update.pkg'
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/pkgbuild
+detections:
+  - name: "Elastic Detection Rules: Suspicious File Creation via Pkg Install Script"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/persistence_suspicious_file_creation_via_pkg_install_script.toml
+  - name: "Elastic Detection Rules: Suspicious Installer Package Spawns Network Event"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/execution_installer_package_spawned_network_event.toml
+  - name: "Sigma Rules: Suspicious Installer Package Child Process"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_installer_susp_child_process.yml
+  - name: "Jamf Protect: Installer Initiated Network Connection"
+    url: https://github.com/jamf/jamfprotect/blob/main/custom_analytic_detections/installer_initiated_network_connection.yaml
+  - name: "Process lineage: package_script_service or Installer spawning a shell interpreter (bash/zsh/sh/python) whose command line contains preinstall or postinstall"
+    url: N/A
+resources:
+  - name: "MITRE ATT&CK T1546.016 - Event Triggered Execution: Installer Packages"
+    url: https://attack.mitre.org/techniques/T1546/016/
+  - name: "How to Phish for Geniuses (Black Hills Information Security)"
+    url: https://www.blackhillsinfosec.com/how-to-phish-for-geniuses/
+  - name: "Analyzing a Pirrit adware installer (script-only packages)"
+    url: https://forensicitguy.github.io/analyzing-pirrit-adware-installer/
+  - name: "Clipping Silver Sparrow's wings (Red Canary)"
+    url: https://redcanary.com/blog/threat-intelligence/clipping-silver-sparrows-wings/
+  - name: "macOS FlexibleFerret | Further Variants of DPRK Malware Family Unearthed (SentinelOne)"
+    url: https://www.sentinelone.com/blog/macos-flexibleferret-further-variants-of-dprk-malware-family-unearthed/
+  - name: "pkgbuild(1) man page"
+    url: https://keith.github.io/xcode-man-pages/pkgbuild.1.html
+acknowledgements:
+  - Tony Lambert (forensicitguy) for analysis of script-only installer packages
