@@ -1,0 +1,76 @@
+name: mdimport
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Load Spotlight importer plug-ins and force files through the metadata import chain.
+full_description: mdimport is the command-line front end to macOS Spotlight metadata importers. It lists installed importers, test-imports a file through the importer chain and prints the extracted attributes, and asks the Spotlight server to reimport files for the UTIs a plug-in claims. A Spotlight importer is a `.mdimporter` bundle containing executable code that the indexing service loads and runs. macOS discovers importers dropped into `/Library/Spotlight`, `~/Library/Spotlight`, or an application's `Contents/Library/Spotlight`, so a writable importer directory is a long-documented code-execution and persistence surface. mdimport is attractive to an attacker because it forces a freshly dropped importer to load immediately instead of waiting for the indexer, drives files through an importer's read path to reach content the caller could not otherwise read, and enumerates the importer landscape - all from a signed Apple binary.
+created: 2026-09-20
+example_use_cases:
+  - name: Drop a malicious Spotlight importer bundle into the importer directory
+    description: An attacker who can write to a user's `~/Library/Spotlight` (no root or TCC grant required for the user's own directory) copies a `.mdimporter` bundle whose code runs when the Spotlight indexing service loads it. This places the payload where macOS will discover it, either on its own during normal indexing or on demand once forced to load.
+    code: cp -R Evil.mdimporter ~/Library/Spotlight/
+    tactics:
+      - Persistence
+    tags:
+      - spotlight
+  - name: Force-load a malicious Spotlight importer for persistence
+    description: macOS would eventually discover a dropped `.mdimporter` bundle on its own, but `mdimport -r` names the bundle and asks the server to reimport files for the UTIs it claims, triggering the load on demand rather than after an indexing delay. The importer is hosted by a system-managed process, giving the payload recurring execution.
+    code: mdimport -r ~/Library/Spotlight/Evil.mdimporter
+    tactics:
+      - Persistence
+      - Execution
+    tags:
+      - spotlight
+  - name: Enumerate installed Spotlight importers
+    description: The -L flag prints every importer registered on the host and exits, without importing anything. An attacker uses it to inventory built-in and third-party importers, spot writable importer directories, and confirm that a dropped `.mdimporter` bundle has been registered by the system.
+    code: mdimport -L
+    tactics:
+      - Discovery
+    tags:
+      - spotlight
+  - name: Register the malicious importer before driving files through it
+    description: Before abusing the importer chain to read protected content, the crafted `.mdimporter` bundle must be registered with the indexing server via `mdimport -r`, so the malicious code is loaded and ready to parse files handed to it.
+    code: mdimport -r ~/Library/Spotlight/Evil.mdimporter
+    tactics:
+      - Defense Evasion
+    tags:
+      - spotlight
+  - name: Drive TCC-protected files through the importer chain to read their content
+    description: The -i flag (the default) asks Spotlight to import a file or, recursively, a directory. The indexing worker performs the read with its own privileges, so a caller that lacks Full Disk Access can still cause protected locations to be parsed by an importer it controls. This is the mechanism behind Sploitlight (CVE-2025-31199), where a crafted importer registered under `~/Library/Spotlight` read TCC-protected data such as the Photos databases when the target directories were imported. Apple fixed the class of issue in macOS Sequoia 15.4; the technique is documented against earlier builds.
+    code: mdimport -i ~/Downloads
+    tactics:
+      - Collection
+      - Defense Evasion
+    tags:
+      - spotlight
+  - name: Dump a document's parsed attributes and text content to a file
+    description: With -t (test import) mdimport runs a file through the matching importer and returns the result to mdimport instead of storing it in the index; -d3 prints the full attribute summary including `kMDItemTextContent`, and -o writes that output to a file. An attacker uses this to extract the indexed text and metadata of a target document - including content an importer normalizes out of a binary file format - into an attacker-readable location for staging.
+    code: mdimport -t -d3 -o /tmp/.out <TARGET_FILE>
+    tactics:
+      - Collection
+    tags:
+      - spotlight
+paths:
+  - /usr/bin/mdimport
+detections:
+  - name: "Execution of mdimport with -r or -i referencing a user-writable Spotlight importer directory (~/Library/Spotlight or /Library/Spotlight)"
+    url: N/A
+  - name: "Creation or modification of a .mdimporter bundle under ~/Library/Spotlight, /Library/Spotlight, or an app's Contents/Library/Spotlight, correlated with unsigned code"
+    url: N/A
+  - name: "Microsoft Defender for Endpoint: alerts on anomalous Spotlight operations, including unusual .mdimporter installations and indexing of sensitive directories (Sploitlight)"
+    url: https://www.microsoft.com/en-us/security/blog/2025/07/28/sploitlight-analyzing-a-spotlight-based-macos-tcc-vulnerability/
+resources:
+  - name: "Writing Bad @$$ Malware for OS X (Black Hat US-15) - Patrick Wardle"
+    url: https://www.blackhat.com/docs/us-15/materials/us-15-Wardle-Writing-Bad-A-Malware-For-OS-X.pdf
+  - name: "macOS persistence - Spotlight importers and how to create them - theevilbit"
+    url: https://theevilbit.github.io/posts/macos_persistence_spotlight_importers/
+  - name: "Beyond the good ol' LaunchAgents - 11 - Spotlight Importers - theevilbit"
+    url: https://theevilbit.github.io/beyond/beyond_0011/
+  - name: "Sploitlight: Analyzing a Spotlight-based macOS TCC vulnerability - Microsoft Security"
+    url: https://www.microsoft.com/en-us/security/blog/2025/07/28/sploitlight-analyzing-a-spotlight-based-macos-tcc-vulnerability/
+  - name: "[0day] From Spotlight to Apple Intelligence - Objective-See"
+    url: https://objective-see.org/blog/blog_0x81.html
+  - name: "About the security content of macOS Sequoia 15.4 (CVE-2025-31199)"
+    url: https://support.apple.com/en-us/122373
+acknowledgements:
+  - Patrick Wardle (@patrickwardle)
+  - Csaba Fitzl (@theevilbit)
+  - Jonathan Bar Or, Alexia Wilson, Christine Fossaceca (Microsoft, Sploitlight / CVE-2025-31199)
