@@ -1,0 +1,108 @@
+name: smbutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Enumerate SMB servers, shares, and identities from the command line.
+full_description: >-
+  smbutil is the command-line interface to the macOS SMB requester. It is the
+  client-side counterpart to mounting a share: rather than attaching a volume,
+  its subcommands query SMB servers for information. view lists the shares a
+  remote host exports for a given account, status and lookup resolve NetBIOS
+  names in both directions, identity reports how a server sees the caller's
+  authenticated session, and statshares lists every share this Mac already has
+  mounted along with its security attributes. To an attacker on an enterprise
+  Mac this is native, unprivileged reconnaissance. A single command maps the
+  file servers reachable from the host, tests whether a set of harvested
+  credentials authenticates to a target, and reads back the negotiated security
+  posture (signing and encryption) of connections the host already holds, using
+  a binary present on every Mac rather than the Finder or a dropped tool.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the shares a remote host exports
+    description: >-
+      The view subcommand lists the resources a remote SMB server offers to the
+      supplied account. Against a server that permits guest access the -G option
+      authenticates as guest with no credentials, turning a target IP into a list
+      of exported share names. This is the network-share-discovery step that
+      precedes mounting and data collection, and maps to MITRE ATT&CK T1135
+      (Network Share Discovery).
+    code: smbutil view -G //<TARGET_IP>
+    tactics:
+      - Discovery
+    tags:
+      - smb
+  - name: Enumerate remote shares with harvested credentials
+    description: >-
+      The view URL accepts a domain, username and password inline
+      (//domain;user:password@server), so an attacker who has obtained a valid
+      account can list the shares a specific server exports for that user without
+      any GUI interaction. Because it authenticates to a remote host with valid
+      credentials to reveal what is reachable there, it is both discovery and a
+      precursor to lateral movement. The credentials appear in the process
+      argument list; -N suppresses the interactive password prompt when supplying
+      them another way.
+    code: smbutil view -N //<DOMAIN>\;<USER>:<PASSWORD>@<TARGET_IP>
+    tactics:
+      - Discovery
+      - Lateral Movement
+    tags:
+      - smb
+  - name: Validate stolen credentials against a target server
+    description: >-
+      The identity subcommand opens an authenticated session to a server and
+      prints the user identity the server attributes to that session. An attacker
+      uses it to confirm that a harvested password or an existing Kerberos ticket
+      actually authenticates against a chosen host, and to see the account and
+      domain the server maps the session to, before committing to a mount or
+      further access. The -N option avoids an interactive password prompt.
+    code: smbutil identity //<DOMAIN>\;<USER>@<TARGET_IP>
+    tactics:
+      - Credential Access
+      - Discovery
+    tags:
+      - smb
+  - name: Resolve a host to its NetBIOS workgroup and system names
+    description: >-
+      The status subcommand resolves an IP address or DNS name to its NetBIOS
+      workgroup and machine names, and with -a returns every NetBIOS name the
+      host registers. This adds domain and hostname context to an IP during
+      discovery of the SMB environment without connecting to any share. It relies
+      only on NetBIOS name service being reachable on the target.
+    code: smbutil status -a <TARGET_IP>
+    tactics:
+      - Discovery
+    tags:
+      - smb
+  - name: Map the SMB shares the host already reaches and their security posture
+    description: >-
+      The statshares subcommand with -a lists every SMB share currently mounted
+      on the Mac together with each connection's attributes, including whether SMB
+      signing and encryption are in effect. This gives an attacker an immediate
+      inventory of the file servers this host already trusts and connects to, and
+      flags sessions whose weak security settings make them easier to abuse. It
+      reads local mount state and needs no credentials or network calls.
+    code: smbutil statshares -a
+    tactics:
+      - Discovery
+    tags:
+      - smb
+      - shares
+paths:
+  - /usr/bin/smbutil
+detections:
+  - name: "Splunk Security Content: MacOS Network Share Discovery (process command line matches smbutil or showmount)"
+    url: https://research.splunk.com/endpoint/a5f5fe52-8e50-4fb0-ad1b-780be6c0d857/
+  - name: "Splunk Security Content: macos_network_share_discovery detection source (Processes.process IN (\"*showmount *\", \"*smbutil *\"))"
+    url: https://github.com/splunk/security_content/blob/develop/detections/endpoint/macos_network_share_discovery.yml
+  - name: "Command line detection: smbutil view or identity with an inline //domain;user:password@host or //user@host URL, indicating credentialed enumeration of a remote server"
+    url: N/A
+  - name: "Process lineage detection: smbutil spawned by a shell or scripting host rather than by interactive user activity"
+    url: N/A
+resources:
+  - name: "MITRE ATT&CK T1135: Network Share Discovery"
+    url: https://attack.mitre.org/techniques/T1135/
+  - name: "Atomic Red Team T1135: Network Share Discovery (macOS)"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1135/T1135.md
+  - name: "smbutil(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/smbutil.1.html
+acknowledgements:
+  - Splunk Threat Research Team (MacOS Network Share Discovery detection)
+  - Red Canary / Atomic Red Team (T1135 macOS atomic test)
