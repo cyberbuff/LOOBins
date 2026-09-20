@@ -1,0 +1,109 @@
+name: mount_smbfs
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Mount a remote SMB/CIFS share from the command line, with inline credentials.
+full_description: >-
+  mount_smbfs is the SMB/CIFS mount helper shipped with macOS. It attaches a
+  share exported by a remote SMB file server to a directory in the local
+  filesystem namespace, and is normally reached through mount(8) or the Finder
+  rather than directly. Its command-line interface is what makes it useful to an
+  attacker. The share URL accepts a domain, username and password inline
+  (//domain;user:password@server/share), so a single non-interactive command
+  turns a set of harvested credentials into a mounted, readable file server. The
+  -N option reads the password from ~/Library/Preferences/nsmb.conf instead of
+  the command line, and the nobrowse mount option keeps the resulting volume off
+  the Desktop and out of the Finder sidebar. On an enterprise Mac this is a
+  hands-on-keyboard primitive for reaching file servers with valid accounts and
+  staging or collecting data from them.
+created: 2026-09-20
+example_use_cases:
+  - name: Mount a remote SMB share with harvested credentials
+    description: >-
+      The share URL accepts a domain, username and password inline, so a single
+      command authenticates to a remote server and mounts the named share at a
+      local path. This is the core lateral-movement step: an attacker who has
+      obtained account credentials reaches file servers and other hosts' shares
+      without any GUI interaction, and the mounted contents are then ordinary
+      files that can be read or copied for collection. The password appears in
+      the process argument list, where command-line telemetry will capture it.
+      The mount point must already exist.
+    code: mount_smbfs //<DOMAIN>\;<USER>:<PASSWORD>@<TARGET_IP>/<SHARE> /tmp/mnt
+    tactics:
+      - Lateral Movement
+      - Collection
+    tags:
+      - smb
+  - name: Mount an exposed share using guest access
+    description: >-
+      When a server exports a share for guest access, mount_smbfs attaches it
+      with the guest account and an empty password, giving read access to an open
+      share without any credentials. The mount_smbfs man page documents this form
+      directly (//guest:@server/share). The mount point must already exist.
+    code: mount_smbfs //guest:@<TARGET_IP>/<SHARE> /tmp/mnt
+    tactics:
+      - Lateral Movement
+    tags:
+      - smb
+      - shares
+  - name: Collect files from a mounted network share
+    description: >-
+      Once a share is mounted, its contents are ordinary files under the mount
+      point and can be read or copied with standard tools. Reading sensitive
+      documents this way is collection from a network shared drive rather than
+      from local storage, so monitoring scoped to local file access does not see
+      where the data came from.
+    code: cp -R /tmp/mnt/<DIR> /tmp/loot
+    tactics:
+      - Collection
+    tags:
+      - smb
+      - shares
+  - name: Hide the mounted share from the GUI with nobrowse
+    description: >-
+      mount_smbfs documents nobrowse among the options it accepts with -o: the
+      mount point is not visible via the GUI and the volume does not appear on
+      the Desktop. An attacker combines it with an inline-credential mount to
+      keep access to a remote share out of a logged-in user's view. The mount
+      point must already exist.
+    code: mount_smbfs -o nobrowse //<USER>:<PASSWORD>@<TARGET_IP>/<SHARE> /tmp/.mnt
+    tactics:
+      - Defense Evasion
+      - Lateral Movement
+    tags:
+      - smb
+  - name: Mount without exposing the password in the process arguments
+    description: >-
+      With -N, mount_smbfs does not ask for a password and instead reads
+      ~/Library/Preferences/nsmb.conf for additional configuration parameters and
+      a password, prompting only if it finds none there. An attacker who has
+      seeded that file can mount a share with only the username in the URL,
+      keeping the password out of the process argument list and away from
+      detection logic that inspects command-line arguments for inline secrets.
+      The mount point must already exist.
+    code: mount_smbfs -N //<USER>@<TARGET_IP>/<SHARE> /tmp/mnt
+    tactics:
+      - Defense Evasion
+      - Lateral Movement
+    tags:
+      - smb
+paths:
+  - /sbin/mount_smbfs
+detections:
+  - name: "Elastic Security: Attempt to Mount SMB Share via Command Line (process.name == mount_smbfs, plus open smb://, mount with an smbfs argument, and osascript mount volume)"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/lateral_movement_mounting_smb_share
+  - name: "Command line detection: mount_smbfs invoked directly (Apple's man page states the system mount command should be used instead), especially with an inline user:password@server URL or the -o nobrowse option"
+    url: N/A
+  - name: "Process lineage detection: mount_smbfs spawned by a shell or scripting host rather than by mount(8)"
+    url: N/A
+  - name: "Network detection: a new SMB session (TCP/445) to an internal host correlated in time with a mount_smbfs process execution"
+    url: N/A
+resources:
+  - name: "MITRE ATT&CK T1021.002: Remote Services - SMB/Windows Admin Shares"
+    url: https://attack.mitre.org/techniques/T1021/002/
+  - name: "MITRE ATT&CK T1039: Data from Network Shared Drive"
+    url: https://attack.mitre.org/techniques/T1039/
+  - name: "mount_smbfs(8) manual page"
+    url: https://ss64.com/mac/mount_smbfs.html
+  - name: "Elastic detection-rules: lateral_movement_mounting_smb_share.toml"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/lateral_movement_mounting_smb_share.toml
+acknowledgements:
+  - Elastic Security detection-rules project - Attempt to Mount SMB Share via Command Line
