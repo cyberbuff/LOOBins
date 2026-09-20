@@ -1,0 +1,82 @@
+name: pluginkit
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query and manage the per-user PlugInKit app extension database.
+full_description: |-
+  pluginkit is a command-line tool that manages the PlugInKit subsystem for the current user. It can
+  query the plug-in database (app extensions such as Finder Sync, Share, Action, and Widget extensions)
+  and make limited interventions intended for extension development and maintenance. It is attractive to
+  an attacker because it exposes a scriptable interface to the extension registry: it can enumerate every
+  installed app extension for discovery, explicitly register an extension bundle that automatic discovery
+  would not normally pick up, and change a user's election for an extension (use or ignore) without any
+  GUI interaction. A signed, sandboxed Finder Sync extension that is registered and elected "use" is
+  loaded by the OS whenever the user browses a watched directory, giving an attacker code execution that
+  survives logout and reboot.
+created: 2026-09-20
+example_use_cases:
+- name: Enumerate all installed app extensions
+  description: The -m (match) operation scans every registered plug-in and prints one per line, with a
+    leading tag showing the user election state (+ use, - ignore, ! debug, = superseded, ? unknown).
+    Combined with -A (all versions) and -v (verbose, repeatable) it gives an attacker a full inventory
+    of app extensions on the host during discovery, including third-party security and productivity
+    extensions, without requiring root.
+  code: pluginkit -m -A -v -v
+  tactics:
+  - Discovery
+  tags: []
+- name: Enumerate extensions for a specific extension point
+  description: The -p (protocol) flag is shorthand for the NSExtensionPointName match key and limits the
+    -m scan to extensions that plug into one extension point. Querying the Finder Sync extension point
+    lets an attacker locate the bundle identifiers of any Finder Sync plug-ins already installed, either
+    to target them or to confirm a newly planted one is registered.
+  code: pluginkit -m -p com.apple.FinderSync -v
+  tactics:
+  - Discovery
+  tags: []
+- name: Register a Finder Sync extension bundle
+  description: The -a flag explicitly adds a plug-in at a given file path even when it is not eligible for
+    automatic discovery. Pointed at a malicious Finder Sync .appex, this registers the extension without the
+    user opening System Settings. The extension must be code-signed and sandboxed and must live inside an app
+    bundle (for example /Applications/<APP>.app/Contents/PlugIns/). Note that -a alone cannot make a permanent
+    registry change - automatic clean-ups may remove it unless the "use" election is also set.
+  code: pluginkit -a /Applications/<APP>.app/Contents/PlugIns/<EXTENSION>.appex
+  tactics:
+  - Persistence
+  - Defense Evasion
+  tags: []
+- name: Enable a registered extension by bundle ID for persistence
+  description: -e use applies the "use" election to every plug-in with the given identifier, forcing a
+    registered extension enabled without the user opening System Settings. Once elected "use", the plug-in
+    runs in its own process that the OS relaunches whenever the user browses a directory it watches, and this
+    election persists the attacker's choice even though the registration made with -a alone would not.
+  code: pluginkit -e use -i <BUNDLE_ID>
+  tactics:
+  - Persistence
+  - Defense Evasion
+  tags: []
+- name: Disable a security or endpoint extension via its election
+  description: The -e ignore election marks all plug-ins with the given identifier as ignored for the
+    current user, which stops PlugInKit from loading them. An attacker with access to a user session can
+    use this to disable a defensive Finder Sync, Content Filter, or other app extension without deleting
+    any files, degrading visibility while leaving the extension bundle in place.
+  code: pluginkit -e ignore -i <BUNDLE_ID>
+  tactics:
+  - Defense Evasion
+  tags: []
+paths:
+- /usr/bin/pluginkit
+detections:
+- name: "Elastic Detection Rules: Finder Sync Plugin Registered and Enabled"
+  url: https://github.com/elastic/detection-rules/blob/main/rules/macos/persistence_finder_sync_plugin_pluginkit.toml
+- name: "Elastic Security: Finder Sync Plugin Registered and Enabled (prebuilt rule reference)"
+  url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/persistence_finder_sync_plugin_pluginkit
+- name: "Command-line detection: pluginkit invoked with -e use -i or -a from a scripting interpreter or unsigned/untrusted parent process"
+  url: N/A
+resources:
+- name: "Beyond the good ol' LaunchAgents - 26 - Finder Sync Plugins (Csaba Fitzl)"
+  url: https://theevilbit.github.io/beyond/beyond_0026/
+- name: "Finder Syncs (Objective-See)"
+  url: https://objective-see.org/blog/blog_0x11.html
+- name: "pluginkit(8) manual page"
+  url: https://keith.github.io/xcode-man-pages/pluginkit.8.html
+acknowledgements:
+- Csaba Fitzl (@theevilbit, Finder Sync plugin persistence research)
