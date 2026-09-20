@@ -1,0 +1,128 @@
+name: eslogger
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Stream system-wide Endpoint Security events as JSON, covering process execution, file access and remote logins.
+full_description: >-
+  eslogger is a command-line Endpoint Security client that Apple ships with macOS 13 Ventura and later. It
+  subscribes to Endpoint Security notify events and emits them as JSON Lines on standard output, or as JSON
+  records in the unified logging system. Apple intended it for security engineers and analysts who need
+  visibility into system activity without writing a system extension, and the same properties make it useful
+  after a compromise: it is a signed, first-party binary that is already entitled for Endpoint Security, so an
+  adversary who has reached root and holds Full Disk Access on the responsible process gains a system-wide
+  sensor without installing anything. The man page states that eslogger suppresses events for every process in
+  its own process group, so an operator's own collection pipeline does not appear in the data it produces.
+  /usr/bin/estrace is a symlink to the same binary and offers a narrower, per-process trace that its man page
+  states can be run as a non-superuser. By design neither name supports Endpoint Security auth events, so
+  eslogger can observe activity but not block it.
+created: 2026-09-20
+example_use_cases:
+  - name: Capture system-wide process execution telemetry
+    description: >-
+      Subscribing to the exec, fork and exit events produces a JSON Lines record of every process launched on the
+      host, including the executable path, audit token, arguments, and the parent and responsible process.
+      Credentials and connection strings are routinely passed on command lines by scripts, backup jobs and admin
+      tooling, so a long-running subscription doubles as a passive credential source and as a map of scheduled
+      administrative activity. Like every eslogger subscription, this requires root and Full Disk Access on the
+      responsible process.
+    code: sudo eslogger exec fork exit >> /tmp/.proc.jsonl
+    tactics:
+      - Discovery
+      - Collection
+      - Credential Access
+    tags:
+      - requires-root
+  - name: Monitor file activity to locate and time access to sensitive files
+    description: >-
+      The open, create, access, unlink and utimes events report file operations across the whole system with the
+      acting process attached. An adversary can use this to learn where a user keeps keychains, SSH keys, browser
+      profiles and password manager vaults, and to observe when a legitimate process opens those files, rather
+      than reading them blind.
+    code: sudo eslogger open create access unlink utimes >> /tmp/.files.jsonl
+    tactics:
+      - Collection
+      - Discovery
+    tags:
+      - requires-root
+  - name: Watch for responder and administrator sessions on a compromised host
+    description: >-
+      The openssh_login, openssh_logout, screensharing_attach and screensharing_detach events fire when a remote
+      session starts or ends and carry the account and session details. An adversary holding persistence can
+      subscribe to them to learn when an administrator or incident responder connects to the host, and use that
+      as a trigger to pause activity or tear down tooling.
+    code: sudo eslogger openssh_login openssh_logout screensharing_attach screensharing_detach >> /tmp/.sessions.jsonl
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags:
+      - ssh
+  - name: Observe enforcement actions against the adversary's own tooling
+    description: >-
+      xp_malware_detected and xp_malware_remediated fire when XProtect matches or removes a payload, tcc_modify
+      (macOS 15.4 and later) fires when a TCC permission is granted or revoked, and btm_launch_item_add and
+      btm_launch_item_remove fire when a background task management item such as a launch agent is registered or
+      removed. Subscribing to them turns the host's own defences into a feedback channel, telling an operator
+      which payload was flagged and whether a persistence item survived.
+    code: sudo eslogger xp_malware_detected xp_malware_remediated tcc_modify btm_launch_item_add btm_launch_item_remove
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+  - name: Divert collected events into the unified log instead of a file on disk
+    description: >-
+      The --oslog flag sends event data to the unified logging system rather than standard output, so a
+      collection run creates no new file for a forensic sweep of the filesystem to find, and the records can be
+      read back later with log(1). --oslog-subsystem and --oslog-category let an adversary file the records under
+      an arbitrary, innocuous-looking name. The man page notes the trade-off: the default subsystem and category
+      are configured for oversize messages with a 32k limit, while a custom subsystem or category makes the
+      default log profile ineffective and truncates messages at 1k.
+    code: sudo eslogger --oslog --oslog-subsystem com.apple.diagnostics.core --oslog-category events exec openssh_login
+    tactics:
+      - Defense Evasion
+      - Collection
+    tags:
+      - logging
+  - name: Trace a payload's Endpoint Security footprint without root using the estrace symlink
+    description: >-
+      /usr/bin/estrace is a symlink to /usr/bin/eslogger. Its man page states that, unlike eslogger, estrace can
+      be run as a non-superuser, and it scopes collection to the command it launches rather than the whole
+      system. An operator can use it on the target host to measure which Endpoint Security events a payload
+      emits before running the real thing, and tune the payload against the telemetry an EDR would see. Because
+      estrace is a second name for the same binary, a rule that matches only the literal string eslogger on the
+      command line does not fire on an estrace invocation.
+    code: estrace --event-types exec,fork,exit,open --output /tmp/.trace.jsonl /path/to/payload
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/eslogger
+  - /usr/bin/estrace
+detections:
+  - name: "Execution of the Endpoint Security logger binary outside an approved DFIR or detection-engineering workflow. Because /usr/bin/estrace is a symlink to /usr/bin/eslogger, cover both names: match on the executable path, and on command lines beginning with either eslogger or estrace."
+    url: N/A
+  - name: "eslogger invoked with a large event subscription list, or with standard output redirected to a file in a user-writable or hidden path such as /tmp, /var/tmp or a dot-file in a home directory."
+    url: N/A
+  - name: "Unified log records carrying Endpoint Security JSON under subsystem com.apple.eslogger, or under an unexpected subsystem or category, indicating use of --oslog, --oslog-subsystem or --oslog-category."
+    url: N/A
+  - name: "New Full Disk Access grants to terminal emulators or to eslogger itself, which are the prerequisite for any eslogger abuse. Monitor with the Endpoint Security tcc_modify event on macOS 15.4 and later."
+    url: https://developer.apple.com/documentation/endpointsecurity/es_event_type_notify_tcc_modify
+  - name: "PPPC configuration profiles of payload type com.apple.TCC.configuration-profile-policy that set the SystemPolicyAllFiles service key, which the eslogger man page documents as the MDM route to granting Full Disk Access."
+    url: N/A
+  - name: "Enabling 'Allow full disk access for remote users' under Sharing > Remote Login, which the eslogger man page documents as the way to satisfy the Full Disk Access requirement over SSH."
+    url: N/A
+  - name: "LaunchDaemon or LaunchAgent property lists whose ProgramArguments reference eslogger or estrace, indicating persistent Endpoint Security collection."
+    url: N/A
+resources:
+  - name: "eslogger(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/eslogger.1.html
+  - name: "What's new in Endpoint Security (WWDC22) - Apple's introduction of eslogger"
+    url: https://developer.apple.com/videos/play/wwdc2022/110345/
+  - name: "Apple Endpoint Security framework documentation"
+    url: https://developer.apple.com/documentation/endpointsecurity
+  - name: "Blue Teaming on macOS with eslogger (Cybereason)"
+    url: https://www.cybereason.com/blog/blue-teaming-on-macos-with-eslogger
+  - name: "TCCing is Believing - Apple adds TCC events to Endpoint Security (Objective-See)"
+    url: https://objective-see.org/blog/blog_0x7F.html
+  - name: "The Art of Mac Malware, Volume 2, Chapter 8: Endpoint Security"
+    url: https://taomm.org/vol2/pdfs/CH%208%20Endpoint%20Security.pdf
+acknowledgements:
+  - Patrick Wardle (Objective-See, tcc_modify Endpoint Security event research)
