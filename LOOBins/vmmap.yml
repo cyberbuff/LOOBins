@@ -1,0 +1,97 @@
+name: vmmap
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Map another process's virtual memory regions to locate secret-bearing heap allocations.
+full_description: |
+  The vmmap binary ships with macOS as a developer memory-analysis tool. Its documented purpose is to
+  display the virtual memory regions allocated in a process, labelling each region by purpose
+  (MALLOC_TINY, MALLOC_SMALL, stack, __TEXT, __DATA and so on), its address range, protection bits and
+  sharing mode, so a programmer can understand how a process uses memory. It accepts a target as a pid,
+  a full or partial executable name, or the pathname of a ".memgraph" file produced by leaks or the
+  Xcode Memory Graph Debugger. For an attacker, vmmap is the reconnaissance step that precedes memory
+  scraping: rather than dumping a whole address space blindly, it names the exact address ranges that
+  hold heap allocations, and those ranges are where passwords, tokens, keys and decrypted data live at
+  runtime. It is Apple-signed and already present, so it needs no dropped tooling. Reading another
+  process requires acquiring that process's task port: a same-user target that lacks the hardened
+  runtime or carries the get-task-allow entitlement (for example a debug build) can be read without
+  root, while most other processes require root, and SIP-protected platform binaries cannot be read
+  even as root. A ".memgraph" file, by contrast, can be analysed offline on any machine with no access
+  to the original target and no special privileges.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate a target process's memory regions to locate secret-bearing heap
+    description: >-
+      Run vmmap against a process by pid or partial executable name to list its VM regions. The output
+      names each region's purpose and address range, so the malloc heap regions (MALLOC_TINY,
+      MALLOC_SMALL, MALLOC_LARGE) that hold runtime secrets can be identified before a follow-on read of
+      those specific ranges. The operator must be able to obtain the target's task port: this works
+      without root only when the target is the operator's own process and either lacks the hardened
+      runtime or carries the get-task-allow entitlement; otherwise root is required, and SIP-protected
+      system processes cannot be read at all. The -s flag sorts regions by size (dirty plus swapped) to
+      surface the largest allocations first.
+    code: vmmap -s <TARGET_PROCESS_NAME>
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Locate securityd MALLOC_TINY regions to target the keychain master key
+    description: >-
+      The keychaindump technique runs "vmmap <pid>" against the securityd process and parses each
+      "MALLOC_TINY <start>-<stop>" line to obtain the heap address ranges, then scans those ranges for
+      the unlocked keychain master key (a 24-byte candidate preceded by an 8-byte 0x18 length field).
+      vmmap supplies the region boundaries that make the scan targeted rather than a full-memory sweep.
+      This requires root to acquire securityd's task port, and on current macOS releases SIP hardening
+      of platform daemons blocks reading securityd even as root, so treat this as historical and
+      research-only rather than a technique that works out of the box on a modern, SIP-enabled host.
+    code: vmmap <SECURITYD_PID> | grep MALLOC_TINY
+    tactics:
+      - Credential Access
+    tags: []
+  - name: Analyse an exfiltrated memory graph file offline
+    description: >-
+      vmmap accepts the pathname of a ".memgraph" file (produced by leaks -outputGraph or the Xcode
+      Memory Graph Debugger) in place of a live pid or process name. An attacker who has captured a
+      process memory graph on a victim host can copy the file off the machine and reconstruct the
+      target's full region layout on their own system, with no access to the original process, no task
+      port and no root. The -w flag widens the output to show the full paths of mapped files, aiding
+      offline triage of what the captured process had loaded.
+    code: vmmap -w <TARGET>.memgraph
+    tactics:
+      - Collection
+      - Discovery
+    tags: []
+  - name: Enumerate a process's mapped libraries to fingerprint loaded security tooling
+    description: >-
+      With the -w (wide) flag, vmmap prints the full filesystem paths of every mapped file in the target
+      process, including dynamic libraries loaded into it. An attacker can read these paths to identify
+      security-product agents, injected dylibs or monitoring frameworks resident in a process before
+      deciding how to proceed. The same task-port prerequisite applies: the operator's own debuggable
+      process needs no root, other processes require root, and SIP-protected binaries cannot be read.
+    code: vmmap -w <TARGET_PROCESS_NAME>
+    tactics:
+      - Discovery
+    tags:
+      - dylib
+paths:
+  - /usr/bin/vmmap
+detections:
+  - name: "Process execution: /usr/bin/vmmap invoked with a pid or process name that the invoking user does not own, or that names a credential-handling daemon such as securityd."
+    url: N/A
+  - name: "Command line argument: vmmap output piped to grep for MALLOC_TINY (or other MALLOC region labels), matching the keychaindump heap-scan pattern."
+    url: N/A
+  - name: "File access: vmmap invoked against a .memgraph file path, indicating offline analysis of a previously captured process memory graph."
+    url: N/A
+  - name: "Endpoint Security telemetry: process-execution (ES_EVENT_TYPE_NOTIFY_EXEC) of /usr/bin/vmmap, correlating the invoking binary's path, code-signing identity and UID against expected developer activity."
+    url: https://web.archive.org/web/20240529090222/https://labs.withsecure.com/publications/esfang-exploring-the-macos-endpoint-security-framework-for-threat-detection
+resources:
+  - name: "vmmap(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/vmmap.1.html
+  - name: "Apple Developer: Gathering information about memory use"
+    url: https://developer.apple.com/documentation/xcode/gathering-information-about-memory-use
+  - name: "keychaindump (Juuso Salonen) - uses vmmap to locate securityd MALLOC_TINY regions"
+    url: https://github.com/juuso/keychaindump
+  - name: "Keychain Analysis with Mac OS X Memory Forensics"
+    url: https://repo.zenk-security.com/Forensic/Keychain%20Analysis%20with%20Mac%20OS%20X%20Memory%20Forensics.pdf
+  - name: "MITRE ATT&CK T1003: OS Credential Dumping"
+    url: https://attack.mitre.org/techniques/T1003/
+acknowledgements:
+  - Juuso Salonen (keychaindump, vmmap-based securityd heap scan)
