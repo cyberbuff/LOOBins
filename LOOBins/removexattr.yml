@@ -1,0 +1,62 @@
+name: removexattr
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Remove a named extended attribute from a file using an Apple-signed helper shipped inside SystemMigration.framework.
+full_description: |
+  removexattr is a small command-line helper bundled inside the private SystemMigration.framework, the component
+  behind Migration Assistant. It is a thin wrapper over the removexattr(2) system call, taking a file path and an
+  attribute name and deleting that name:value pair from the file. Because the same operation is exposed by the well-known
+  /usr/bin/xattr utility, removexattr offers an attacker an identical primitive from an unexpected, Apple-signed
+  binary path. Detections and execution allowlists that key on the xattr process image (for example the SigmaHQ
+  "Gatekeeper Bypass via Xattr" rule, which matches an image ending in /xattr together with the -d flag) do not
+  match this binary at all, so an adversary can remove com.apple.quarantine to defeat Gatekeeper, or delete
+  provenance metadata to frustrate forensics, while evading name-based monitoring. Endpoint tooling that hooks the
+  extended-attribute-delete event itself, rather than a specific process name, still observes the activity.
+created: 2026-09-20
+example_use_cases:
+  - name: Bypass Gatekeeper by stripping com.apple.quarantine from a downloaded payload
+    description: >
+      Files written to disk by a browser, an installer, or an archive extractor receive the com.apple.quarantine
+      extended attribute, which causes Gatekeeper to evaluate and, for unsigned or unnotarized code, block the
+      file on first launch. Deleting that attribute removes the file from Gatekeeper's evaluation path so it runs
+      without a warning. removexattr performs the same deletion as "xattr -d com.apple.quarantine" but from an
+      Apple-signed binary inside a private framework, so process-name and command-line detections written for the
+      xattr utility do not fire. No elevated privileges are required to clear the attribute on a file the current
+      user owns. The argument order (path, then attribute name) follows the removexattr(2) system call the helper
+      wraps. The same invocation, wrapped in find -exec, walks every file in an extracted .app bundle to clear
+      quarantine from the whole bundle in one pass.
+    code: find <PAYLOAD_PATH> -exec /System/Library/PrivateFrameworks/SystemMigration.framework/Versions/A/Resources/removexattr {} com.apple.quarantine \;
+    tactics:
+      - Defense Evasion
+      - Execution
+    tags:
+      - quarantine
+      - gatekeeper
+      - xattr
+  - name: Erase download-provenance metadata to hinder forensics
+    description: >
+      macOS records where a downloaded file came from in extended attributes: com.apple.metadata:kMDItemWhereFroms
+      holds the origin and referrer URLs, and com.apple.metadata:kMDItemDownloadedDate holds the download time.
+      These attributes persist on the file and are a standard source for investigators reconstructing how a payload
+      reached a host. Deleting them with removexattr strips that evidence from the file itself while leaving the
+      file in place, an indicator-removal action distinct from clearing quarantine to run the file.
+    code: /System/Library/PrivateFrameworks/SystemMigration.framework/Versions/A/Resources/removexattr <FILE_PATH> com.apple.metadata:kMDItemWhereFroms
+    tactics:
+      - Defense Evasion
+    tags:
+      - xattr
+paths:
+  - /System/Library/PrivateFrameworks/SystemMigration.framework/Versions/A/Resources/removexattr
+detections:
+  - name: "Elastic: Quarantine Attrib Removed by Unsigned or Untrusted Process"
+    url: https://www.elastic.co/guide/en/security/8.19/quarantine-attrib-removed-by-unsigned-or-untrusted-process.html
+  - name: "Alert on execution of the SystemMigration.framework removexattr helper by any parent other than systemmigrationd, especially with com.apple.quarantine or a com.apple.metadata:* attribute name as an argument"
+    url: N/A
+resources:
+  - name: "Apple manual page: removexattr(2)"
+    url: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/removexattr.2.html
+  - name: "MITRE ATT&CK T1553.001: Subvert Trust Controls: Gatekeeper Bypass"
+    url: https://attack.mitre.org/techniques/T1553/001/
+  - name: "macOS Extended Attributes: Case Study (dfir.ch)"
+    url: https://dfir.ch/posts/macos_extended_attributes/
+  - name: "Living-off-the-Land: Exploring macOS LOOBins and Crafting Detection Rules"
+    url: https://danielcortez.substack.com/p/living-off-the-land-exploring-macos
