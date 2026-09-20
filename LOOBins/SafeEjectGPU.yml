@@ -1,0 +1,44 @@
+name: SafeEjectGPU
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Launch application bundles and send relaunch stimulus to processes via an Apple-signed eGPU management utility.
+full_description: SafeEjectGPU is a command-line utility introduced in macOS 10.13.4 that prepares external GPUs (eGPUs) for safe disconnection. It migrates running applications off an ejecting GPU, lists attached GPUs and the apps holding references to them, and can relaunch or terminate those apps so they drop their GPU references. Two of its subcommands make it useful to an attacker who already has code execution. LaunchOnGPU launches an arbitrary application bundle, and RelaunchPID / RelaunchPIDOnGPU send a relaunch stimulus to a specific process. Because the utility is present on every macOS install, is signed by Apple, and lives on disk at a fixed path, a bundle it launches becomes a child of SafeEjectGPU rather than of a shell, Terminal, or scripting host. This breaks detection logic keyed to Terminal/bash/osascript parentage and gives the spawned process the process lineage of a system GPU tool. It is designed for eGPU workflows, and no public threat report attributes its abuse in the wild; the value here is as a signed proxy-execution primitive.
+created: 2026-09-20
+example_use_cases:
+  - name: Proxy execution of an application bundle via LaunchOnGPU
+    description: The LaunchOnGPU subcommand launches an application from a given bundle path. The launched process is parented to /usr/bin/SafeEjectGPU, an Apple-signed system binary, instead of to the shell or scripting host the attacker is operating from. This defeats detection that models a suspicious process tree such as Terminal or bash spawning the payload. The target must be a valid application bundle (a .app directory), and per the man page LaunchOnGPU has no effect if an instance of that app is already running. An optional gpuids prefix (matching the man page's documented example form) limits which GPUs the app can select from but is not required for the launch.
+    code: SafeEjectGPU LaunchOnGPU /path/to/Payload.app
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Enumerate GPUs and the processes holding references to them
+    description: The gpus, apps, and status subcommands report attached GPUs (gpuid, vendor/model, flags), the apps referencing each GPU (PID, RPID, USER, PROCESS, APIS, BUNDLE_IDENTIFIER, PATH, and eject/selection policies), and per-GPU eject state. This provides host, user, and running-process reconnaissance without invoking ps, system_profiler, or other commonly monitored discovery tools, sourced instead from a GPU management utility.
+    code: SafeEjectGPU gpus apps status
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Force a target process to relaunch or terminate via RelaunchPID
+    description: RelaunchPID applies a relaunch stimulus to a single PID, and can be paired with Initiate and Cancel to send the stimulus without performing a full eject. The stimulus follows the target application's GPUEjectPolicy - relaunch sends an AppKit quit-with-save event followed by open-with-restore, while a kill policy uses SIGKILL to force the app to exit (relying on launchd to restart it). Because the acting policy is inferred from the target's Info.plist rather than chosen by the caller, the outcome depends on the target, but this offers a signed path to disrupt or restart a running GUI application. RelaunchPIDOnGPU adds a gpuids list to constrain the GPUs the relaunched process sees.
+    code: SafeEjectGPU Initiate RelaunchPID <PID> Cancel
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags:
+      - processes
+paths:
+  - /usr/bin/SafeEjectGPU
+detections:
+  - name: "Process execution: monitor exec events for /usr/bin/SafeEjectGPU with the LaunchOnGPU, RelaunchPID, or RelaunchPIDOnGPU arguments, which are uncommon in normal endpoint activity"
+    url: N/A
+  - name: "Process lineage: alert on child processes whose parent is /usr/bin/SafeEjectGPU, as an eGPU utility spawning application bundles is anomalous outside of GPU eject workflows"
+    url: N/A
+  - name: "Context correlation: flag SafeEjectGPU LaunchOnGPU or RelaunchPID activity on hosts with no external GPU attached (empty gpus output), where legitimate use is not expected"
+    url: N/A
+resources:
+  - name: SafeEjectGPU(8) manual page
+    url: https://keith.github.io/xcode-man-pages/SafeEjectGPU.8.html
+  - name: "MITRE ATT&CK T1218: System Binary Proxy Execution"
+    url: https://attack.mitre.org/techniques/T1218/
+  - name: "MacHack: Hidden Tools in macOS"
+    url: https://github.com/azenla/MacHack
