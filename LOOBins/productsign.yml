@@ -1,0 +1,55 @@
+name: productsign
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Sign or re-sign a macOS Installer product archive (.pkg) with a code-signing identity.
+full_description: The productsign binary adds a digital signature to a macOS Installer product archive (.pkg) previously created with productbuild, using a code-signing identity (a certificate and private key) held in an accessible keychain. It is the supported way for developers to sign a package before distribution. Because a flat .pkg is a XAR archive whose table of contents can be unpacked, edited, and repacked with tools like pkgutil, an attacker who trojanizes a legitimate installer can use productsign to place a fresh, valid signature over the tampered archive. Running productsign on an already-signed archive replaces the existing signature, so it also strips the original vendor's identity, which both restores the "signed" status that Installer and downstream package-verification checks look for and removes the signature that would otherwise attribute the package to its real author.
+created: 2026-09-20
+example_use_cases:
+  - name: Re-sign a trojanized installer with an attacker-controlled identity
+    description: After unpacking a legitimate .pkg (a XAR archive), editing its preinstall/postinstall scripts or payload, and repacking it, an attacker uses productsign to apply a valid signature so Installer and package-verification tooling report the archive as signed and unmodified. This requires a code-signing identity (certificate plus private key) in an accessible keychain. For the signature to chain to a system-trusted root and satisfy Gatekeeper, the identity must be a genuine Developer ID Installer certificate that the attacker has stolen or fraudulently enrolled; a self-signed identity only defeats checks that test whether a package is signed at all, not whether it is trusted.
+    code: 'productsign --sign "Developer ID Installer: <ORG> (<TEAMID>)" trojanized.pkg trojanized-signed.pkg'
+    tactics:
+      - Resource Development
+      - Defense Evasion
+    tags: []
+  - name: Strip a vendor signature to break attribution
+    description: Because productsign replaces any existing signature on a product archive, re-signing a captured vendor package with a different identity removes the original signing certificate and its embedded Common Name. This overwrites the metadata that ties the package to its real author, hindering signature-based attribution of the resulting artifact. It requires a code-signing identity in an accessible keychain.
+    code: productsign --sign "<ATTACKER_IDENTITY>" vendor-signed.pkg relabeled.pkg
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Sign from a specific attacker-supplied keychain
+    description: The --keychain option makes productsign search a named keychain file for the signing identity instead of the default keychain search path. On a build or staging host this lets an attacker sign packages using a certificate loaded into a self-supplied keychain, avoiding the login keychain and any prompts or logging tied to it. It requires that the target keychain be unlocked and contain the identity's certificate and private key.
+    code: productsign --keychain /private/tmp/build.keychain --sign "<ATTACKER_IDENTITY>" input.pkg signed.pkg
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags: []
+  - name: Embed intermediate certificates to complete a forged chain of trust
+    description: The --cert option embeds an intermediate certificate, identified by its Common Name, into the product archive. When the signing certificate does not chain directly to a trusted root already on the system, an attacker can supply one or more intermediates so the forged signature validates as a complete chain during verification. It requires the intermediate certificates to be present in an accessible keychain.
+    code: productsign --cert "<INTERMEDIATE_CN>" --sign "<ATTACKER_IDENTITY>" input.pkg signed.pkg
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags: []
+  - name: Sign offline by disabling the trusted timestamp
+    description: Signing with a Developer ID identity embeds a trusted timestamp by default, which requires contacting a timestamp server over the network. The --timestamp=none option disables the timestamp, letting an attacker sign a package on an isolated or air-gapped staging host and avoiding the outbound request to Apple's timestamp service that would otherwise be generated during signing. It requires a code-signing identity in an accessible keychain.
+    code: productsign --timestamp=none --sign "<ATTACKER_IDENTITY>" input.pkg signed.pkg
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/productsign
+detections:
+  - name: "Process execution of productsign, particularly outside a legitimate CI or developer build context (parent process not xcodebuild, Xcode, or a known packaging tool)"
+    url: N/A
+  - name: "Repack-and-resign sequence on one host: pkgutil --expand or xar extraction of a .pkg followed by pkgutil --flatten or productbuild and then productsign against the same package"
+    url: N/A
+  - name: "Verify installer packages at deploy time with pkgutil --check-signature, confirming the signing identity matches the expected vendor and the package is notarized (Reversing 'pkgutil' to Verify PKGs)"
+    url: https://www.jamf.com/blog/reversing-pkgutil-to-verify-pkgs/
+resources:
+  - name: "productsign(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/productsign.1.html
+  - name: "Analyzing a Pirrit adware installer (unpacking a macOS .pkg XAR archive)"
+    url: https://forensicitguy.github.io/analyzing-pirrit-adware-installer/
+  - name: "Verifying installer package signing and notarization using pkgutil"
+    url: https://derflounder.wordpress.com/2023/01/20/verifying-installer-package-signing-and-notarization-using-pkgutil/
