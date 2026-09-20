@@ -1,0 +1,119 @@
+name: fdesetup
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Configure FileVault, manage enabled users, and create, rotate, or remove disk recovery keys.
+full_description: fdesetup is the command line interface to FileVault, the macOS full disk encryption feature. It enables and disables FileVault, manages which accounts can unlock the volume at pre-boot, and creates, rotates, and removes the personal and institutional recovery keys. It ships on every macOS install and is invoked routinely by MDM agents and management scripts, so its execution is unremarkable in a managed fleet. To an attacker who has reached root it exposes Apple's own encryption stack - it reports encryption posture and the accounts that can unlock the disk, mints a replacement personal recovery key and writes it to stdout while discarding the copy the organisation escrowed, installs an attacker-held certificate as the institutional recovery key, and restarts a FileVault-enabled Mac past the pre-boot unlock screen. The man page's AUTHORIZATION POLICY section gates only the act of enabling encryption - since macOS 10.15 that needs Full Disk Access for the responsible application, disabled SIP, a DEP-enrolled or MDM user-approved configuration profile installation, or an explicit user confirmation dialog. The recovery key and enabled user commands are documented as requiring root plus FileVault authentication instead of that policy gate.
+created: 2026-09-20
+example_use_cases:
+  - name: Check FileVault encryption status
+    description: The status command reports the boot volume's FileVault posture without elevation, letting an unprivileged foothold establish whether a reboot or offline disk attack will be blocked.
+    code: fdesetup status
+    tactics:
+      - Discovery
+    tags: []
+  - name: Check whether FileVault is active
+    description: The isactive command reports whether FileVault is active without elevation. It is a concise capability check before attempting FileVault-dependent actions.
+    code: fdesetup isactive
+    tactics:
+      - Discovery
+    tags: []
+  - name: List unlock-enabled accounts with fdesetup list
+    description: With root, "list -extended" returns the short names and UUIDs of enabled FileVault users along with their user types and whether the recovery key was escrowed - the man page warns this field reads "Yes" even when the information has not yet reached the escrow server, so it indicates intent rather than a confirmed escrow. This tells an attacker which accounts can unlock the disk at pre-boot.
+    code: sudo fdesetup list -extended
+    tactics:
+      - Discovery
+    tags: []
+  - name: Check whether a personal recovery key exists
+    description: haspersonalrecoverykey reports whether the machine has a personal FileVault recovery key. It requires root.
+    code: sudo fdesetup haspersonalrecoverykey
+    tactics:
+      - Discovery
+    tags: []
+  - name: Check whether an institutional recovery key exists
+    description: hasinstitutionalrecoverykey reports whether a corporate FileVault unlock path exists, which tells an attacker whether an organisation holds a key that could undo later changes. It requires root.
+    code: sudo fdesetup hasinstitutionalrecoverykey
+    tactics:
+      - Discovery
+    tags: []
+  - name: Rotate the personal recovery key and capture the new value
+    description: The changerecovery verb generates a replacement personal recovery key. The man page states that only one recovery key of each type can exist, so the old value is removed and replaced, which invalidates whatever the organisation escrowed - a later recovery attempt by the owner fails against a key the endpoint no longer honours. The man page also states that on APFS volumes running 10.14 or later the existing recovery key can itself be used as authentication to change the personal recovery key, so an attacker who already holds the current key from an escrow record or from a -defer plist can rotate it without knowing any account password. -inputplist reads the authentication property list from stdin and -outputplist writes the new key to stdout as a plist dictionary carrying a Change key and the EnableDate of the change. The man page cautions against leaving either plist in a persistent location, so an operator would pipe the data between tools rather than use the file redirection shown here. Requires root.
+    code: sudo fdesetup changerecovery -personal -inputplist -outputplist < /path/to/authinfo.plist > /tmp/newkey.plist
+    tactics:
+      - Credential Access
+      - Defense Evasion
+    tags: []
+  - name: Install an attacker-controlled certificate as the institutional recovery key
+    description: "changerecovery -institutional -certificate installs an X.509 certificate as the volume's institutional recovery key. The man page states the certificate should be self signed, that its common name must be \"FileVault Recovery Key\", and that the file passed to -certificate is DER encoded. Any existing /Library/Keychains/FileVaultMaster.keychain is moved away with the new location recorded in the system log. The private key of the installed institutional recovery key is itself an authentication and unlock credential, supplied through the -key option as the path to a keychain file - the man page describes this unlock path for CoreStorage volumes. An attacker who generates the keypair themselves and keeps the private key off the host installs a recovery credential only they can present, and the same command displaces the organisation's institutional key, since the man page states the old value is removed and replaced. Requires root and FileVault authentication."
+    code: sudo fdesetup changerecovery -institutional -certificate /path/to/attacker_fvmaster.cer
+    tactics:
+      - Persistence
+      - Credential Access
+      - Defense Evasion
+    tags:
+      - certificate
+  - name: Encrypt an unprotected volume with a recovery key the victim never sees
+    description: The enable verb turns FileVault on for a volume that is not yet encrypted. With -inputplist the account name and password are read from a property list on stdin so the operation runs without a prompt, and -outputplist writes the generated personal recovery key to stdout for the attacker to capture instead of the user. The result is an encrypted volume whose only recovery key is held by the attacker, extortion built on Apple's own encryption stack rather than on attacker-supplied cryptography. This path is gated - the man page's AUTHORIZATION POLICY section states that since macOS 10.15 fdesetup cannot enable FileVault unless the responsible application is authorized for Full Disk Access in the Privacy pane, SIP is disabled, the run was caused by a DEP-enrolled or MDM user-approved configuration profile installation, or the user explicitly authorises the enablement in a confirmation dialog. The man page also notes the command fails without a recovery partition and requires valid passwords for all Secure Token users.
+    code: sudo fdesetup enable -inputplist -outputplist < /path/to/creds.plist > /tmp/rk.plist
+    tactics:
+      - Impact
+    tags: []
+  - name: Check whether the volume supports authenticated restart
+    description: The supportsauthrestart verb reports whether the system allows an authenticated restart at all, though the man page notes a true result still requires FileVault to be enabled. This is the capability check an attacker runs before attempting to arm the bypass.
+    code: fdesetup supportsauthrestart
+    tactics:
+      - Discovery
+    tags: []
+  - name: Arm an authenticated restart so the volume unlocks itself on the next reboot
+    description: The authrestart verb restarts a FileVault-enabled system and bypasses the initial unlock, so the data volume comes back mounted with nobody at the keyboard. For an attacker with root and a FileVault credential on a remote or headless Mac, this turns a reboot that would normally end the intrusion at a locked pre-boot screen into one an implant survives. The man page warns that FileVault protections are reduced during an authenticated restart because fdesetup deliberately stores at least one additional copy of a permanent FDE unlock key in system memory and, on supported systems, in the System Management Controller. Setting -delayminutes to -1 arms the operation without restarting anything, so the unlock bypass takes effect whenever the user next restarts on their own.
+    code: sudo fdesetup authrestart -inputplist -delayminutes -1 < /path/to/authinfo.plist
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Remove a user's unlock rights with fdesetup remove
+    description: The remove verb takes an account off the FileVault enabled user list by short name or UUID, leaving the account intact in the directory but unable to unlock the volume at pre-boot. The man page states it will not remove the user if it is the last OS user on the volume, so another enabled account has to remain - one the attacker controls. Requires root and FileVault authentication.
+    code: sudo fdesetup remove -user <TARGET_USER>
+    tactics:
+      - Impact
+    tags: []
+  - name: Delete the personal FileVault recovery key
+    description: removerecovery -personal deletes the personal recovery key; its -user option names the account authenticating the removal rather than an owner of the key. Requires root and FileVault authentication.
+    code: sudo fdesetup removerecovery -personal -user <AUTH_USER>
+    tactics:
+      - Impact
+    tags: []
+  - name: Delete the institutional FileVault recovery key
+    description: removerecovery -institutional deletes the institutional recovery key. The man page advises against removing every recovery path because losing the FileVault password then leaves the information inaccessible. Requires root and FileVault authentication.
+    code: sudo fdesetup removerecovery -institutional
+    tactics:
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/fdesetup
+detections:
+  - name: "Jamf Protect: FileVault authenticated restart issued (process signed com.apple.fdesetup with an 'authrestart' argument)"
+    url: https://github.com/jamf/jamfprotect/blob/main/custom_analytic_detections/filevault_authrestart.yaml
+  - name: "Process execution of fdesetup with the changerecovery, removerecovery, or remove verbs outside a known MDM or management workflow"
+    url: N/A
+  - name: "Recovery key escrow drift: an escrowed personal recovery key that no longer validates against the endpoint, or a recovery key plist carrying an unexpected Change key and EnableDate"
+    url: N/A
+  - name: "FileVault transitioning from Off to On on an endpoint with no corresponding FDEFileVault configuration profile or management task"
+    url: N/A
+  - name: "Creation or replacement of /Library/Keychains/FileVaultMaster.keychain, or a system log entry recording that an existing FileVaultMaster.keychain was moved away by fdesetup -certificate"
+    url: N/A
+  - name: "Full Disk Access granted to an unexpected process, one of the conditions the fdesetup authorization policy accepts before FileVault can be enabled programmatically"
+    url: N/A
+resources:
+  - name: "fdesetup(8) man page"
+    url: https://keith.github.io/xcode-man-pages/fdesetup.8.html
+  - name: "Managing macOS Catalina's FileVault 2 with fdesetup"
+    url: https://derflounder.wordpress.com/2019/10/17/managing-macos-catalinas-filevault-2-with-fdesetup/
+  - name: "macOS 10.15 Catalina: 7 Big Security Surprises To be Aware Of"
+    url: https://www.sentinelone.com/blog/7-big-security-surprises-coming-to-macos-10-15-catalina/
+  - name: "Apple Platform Deployment: Manage FileVault with device management"
+    url: https://support.apple.com/guide/deployment/manage-filevault-with-device-management-dep0a2cb7686/web
+  - name: "MITRE ATT&CK T1486: Data Encrypted for Impact"
+    url: https://attack.mitre.org/techniques/T1486/
+  - name: "MITRE ATT&CK T1490: Inhibit System Recovery"
+    url: https://attack.mitre.org/techniques/T1490/
+acknowledgements:
+  - Rich Trouton (Der Flounder), for documenting the combined -inputplist and -outputplist usage of fdesetup changerecovery
