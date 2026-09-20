@@ -1,0 +1,70 @@
+name: kcc
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Enumerate, extract, and manipulate Kerberos tickets in the macOS KCM credential cache.
+full_description: kcc is the Heimdal Kerberos credential-cache tool bundled with macOS. macOS stores Kerberos tickets by default in a process-based cache (KCM) managed by a daemon rather than in files on disk, and kcc is the supported command-line interface to it, exposing subcommands such as list, copy_cred_cache, dump-credentials, kgetcred, kswitch, kvno, and kdc. The binaries /usr/bin/klist and /usr/bin/kswitch are symlinks to kcc, and kcc dispatches on argv[0], so those names invoke the same code. On an Active-Directory-bound Mac, or on any Mac using the Local KDC for Apple-to-Apple sharing, a user's cache holds a Ticket Granting Ticket and service tickets. Because kcc is a signed Apple binary present on every install and needs no elevation to read the current user's own cache, it is attractive to an attacker who has code execution and wants to enumerate tickets, copy them out to a file for offline reuse or transfer to a Windows toolchain, request additional service tickets, or switch the default cache to a stolen principal for pass-the-ticket lateral movement. Linux distributions ship MIT Kerberos, which has no kcc, so this is a macOS-specific analogue of Rubeus and Kekeo.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate all Kerberos credential caches and tickets
+    description: The list subcommand (also reachable as the klist symlink) reads the current user's KCM caches and prints the principal, service tickets, encryption types, and expiry for each. This requires no elevation for the invoking user's own caches and reveals whether the host holds a usable TGT, which realm it belongs to, and which service tickets are already cached - the reconnaissance an attacker needs before attempting pass-the-ticket. Flags are documented in the Heimdal kcc-commands definition.
+    code: kcc list --list-all --verbose
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Copy cached Kerberos tickets to a file for extraction
+    description: The copy_cred_cache subcommand copies credentials from the current user's in-memory KCM cache into a destination cache. Supplying a FILE ccache destination writes the tickets to disk, where they can be exfiltrated and replayed on another host or converted to Kirbi format for use with Windows tooling. Operating on the invoking user's own cache needs no elevation; reading another user's cache requires root. This is the exact invocation matched by the Elastic Kerberos Cached Credentials Dumping rule.
+    code: kcc copy_cred_cache FILE:/tmp/.tickets.ccache
+    tactics:
+      - Credential Access
+    tags: []
+  - name: Dump the contents of the credential cache
+    description: The dump-credentials subcommand prints the raw contents of the credential cache, including cached ticket material, without writing an intermediate file. An attacker with execution as the ticket owner can read this directly from process output. The optional --type flag limits the dump to credentials of a given type. Prerequisite is a populated KCM cache for the invoking user; no elevation is needed for that user's own credentials.
+    code: kcc dump-credentials --verbose
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Request a service ticket for pass-the-ticket lateral movement
+    description: The kgetcred subcommand requests a ticket for a named service principal from the KDC using the current TGT. On an AD-bound Mac this lets an attacker obtain a service ticket (for example cifs for an SMB share or host for a remote host) to authenticate to that service without knowing the user's password. The -e flag selects the encryption type; requesting a weaker enctype produces a ticket whose service-account key is easier to crack offline, the kerberoasting variant. Requires a valid TGT in the user's cache.
+    code: kcc kgetcred -e <WEAK_ENCTYPE> cifs/<TARGET_HOST>
+    tactics:
+      - Credential Access
+      - Lateral Movement
+    tags: []
+  - name: Switch the default credential cache to a stolen principal
+    description: The kswitch subcommand (also reachable as the kswitch symlink) changes which credential cache is the default for the session. After importing or planting a stolen ticket into a new cache, an attacker switches the default to that cache so that subsequent Kerberos-aware tools (mount, ssh, smbutil) authenticate as the stolen principal. The --principal flag selects the target principal and --interactive lists caches to choose from. Operates on the invoking user's own cache namespace and needs no elevation.
+    code: kcc kswitch --principal=<STOLEN_PRINCIPAL>
+    tactics:
+      - Lateral Movement
+      - Defense Evasion
+    tags: []
+  - name: Discover the Key Distribution Center for a realm
+    description: The kdc subcommand prints the KDC hosts the client will contact for a given realm, along with their type (kdc, kpasswd, kadmin, kkdcp). On a domain-joined Mac this maps the Active Directory realm's authentication infrastructure - which domain controllers the endpoint trusts - useful for locating targets before ticket abuse. Requires only a realm name and works without elevation.
+    code: kcc kdc <REALM>
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/kcc
+  - /usr/bin/klist
+  - /usr/bin/kswitch
+detections:
+  - name: "Elastic: Kerberos Cached Credentials Dumping (process.name kcc AND args copy_cred_cache)"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/credential_access_kerberosdump_kcc.toml
+  - name: "Command line argument detection: kcc, klist, or kswitch invoked with list, dump-credentials, kgetcred, kswitch, or kdc subcommands (subcommands other than copy_cred_cache are not covered by the Elastic rule)"
+    url: N/A
+  - name: "Endpoint Security Framework: monitor processes loading Heimdal.framework outside expected Kerberos utilities"
+    url: N/A
+resources:
+  - name: "When Kirbi walks the Bifrost (SpecterOps, Cody Thomas)"
+    url: https://specterops.io/blog/2019/11/14/when-kirbi-walks-the-bifrost/
+  - name: "Bifrost source repository"
+    url: https://github.com/its-a-feature/Bifrost
+  - name: "Apple Heimdal kcc-commands definition (authoritative subcommand and flag list)"
+    url: https://github.com/apple-oss-distributions/Heimdal/blob/main/kuser/kcc-commands.in
+  - name: "kcc man page (Xcode man pages)"
+    url: https://keith.github.io/xcode-man-pages/kcc.1.html
+  - name: "MITRE ATT&CK T1558.005 Steal or Forge Kerberos Tickets: Ccache Files"
+    url: https://attack.mitre.org/techniques/T1558/005/
+acknowledgements:
+  - Cody Thomas (@its-a-feature, SpecterOps - Bifrost and macOS Kerberos research)
