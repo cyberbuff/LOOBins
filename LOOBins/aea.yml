@@ -1,0 +1,72 @@
+name: aea
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Create and decrypt Apple Encrypted Archives with password, symmetric, or public-key modes.
+full_description: |
+  aea is the command-line tool for Apple Encrypted Archives (AEA) and ships with macOS. It wraps the Apple
+  Archive format with authenticated encryption, offering password-based (scrypt), raw symmetric-key, and
+  public-key (ECDHE) profiles, and can sign archives with ECDSA. Because it is a signed Apple binary present
+  on every install, an operator can use it to encrypt collected data before moving it off the host so the
+  contents are opaque to network and endpoint content inspection, and in the ECDHE profiles can encrypt to a
+  recipient public key so that only the operator's private key can decrypt the result. The encryption work is
+  done by a native, expected system binary rather than an attacker-supplied tool, and it runs as the current
+  user over files that user can already read.
+created: 2026-09-20
+example_use_cases:
+  - name: Encrypt collected data before exfiltration to defeat content inspection
+    description: >-
+      The encrypt verb packs and encrypts an input into an .aea container. A symmetric-key profile with
+      -key-gen writes a freshly generated key to a key file and produces a container whose bytes are opaque
+      to DLP and network content inspection, so staged data can be moved off the host without its contents
+      being readable in transit. It runs as the current user; the operator keeps the key file to decrypt later.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__symmetric__none -i /tmp/collected.aar -o /tmp/collected.aea -key /tmp/c.key -key-gen
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Encrypt to a recipient public key so only the operator can decrypt
+    description: >-
+      The ECDHE profiles encrypt a container to a recipient public key passed with --recipient-pub. Data
+      encrypted this way can only be decrypted with the matching private key, which the operator holds off
+      the host, so even if the container and the host are later captured the collected data stays
+      confidential. This is stronger operational security than a symmetric key left on or near the victim.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__ecdhe_p256__none -i /tmp/collected.aar -o /tmp/collected.aea --recipient-pub /tmp/operator.pub
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Password-encrypt a container for out-of-band delivery
+    description: >-
+      The scrypt profile derives the key from a password supplied in a password file with -password. An
+      operator can encrypt staged data under a password shared out of band, which keeps no key file on the
+      host and lets the container be decrypted later on operator infrastructure with only the password.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__scrypt__none -i /tmp/collected.aar -o /tmp/collected.aea -password /tmp/pw.txt
+    tactics:
+      - Collection
+      - Exfiltration
+    tags:
+      - password
+  - name: Decrypt an operator-supplied encrypted archive on the host
+    description: >-
+      The decrypt verb reverses any profile given the corresponding key, password, or private key. An
+      operator can deliver second-stage tooling inside an AEA container and decrypt it on the host with the
+      native binary, so the payload travels and rests on disk encrypted until it is used.
+    code: aea decrypt -i /tmp/stage2.aea -o /tmp/stage2 -key /tmp/c.key
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/aea
+detections:
+  - name: "Process execution of /usr/bin/aea with the encrypt verb targeting an archive or staging directory, especially shortly before an outbound network transfer, which is consistent with encrypting collected data prior to exfiltration."
+    url: N/A
+  - name: "File creation of .aea containers in temporary or user-writable locations (/tmp, /var/folders, ~/Library/Caches) by a non-system process."
+    url: N/A
+  - name: "Endpoint Security process-execution telemetry (ES_EVENT_TYPE_NOTIFY_EXEC) for /usr/bin/aea invoked with an ECDHE or scrypt profile by a non-installer, non-developer parent process."
+    url: N/A
+resources:
+  - name: "aea(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/aea.1.html
+  - name: "MITRE ATT&CK T1560: Archive Collected Data"
+    url: https://attack.mitre.org/techniques/T1560/
+  - name: "MITRE ATT&CK T1041: Exfiltration Over C2 Channel"
+    url: https://attack.mitre.org/techniques/T1041/
