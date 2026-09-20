@@ -1,0 +1,50 @@
+name: sysdiagnose
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Gather system-wide diagnostic state into a single staged archive.
+full_description: sysdiagnose is Apple's built-in diagnostic collector. It harvests a broad slice of system state into one archive, spanning recent system logs (a complete system_logs.logarchive copy of the unified log), running process lists, resident memory usage, loaded kernel extensions, a System Profiler report, recent crash reports, disk usage, I/O Kit registry data, and network status. It was written for beta testers and bug reports, not for security, and its output contains personal and identifiable data. An adversary with root can use it as a bulk-collection tool that installs nothing, since one invocation of a signed Apple binary produces a compressed archive staged on disk and ready for exfiltration. The command needs root; by default it writes to /var/tmp, and flags allow the output name, directory, and root volume to be chosen and the UI feedback and Finder reveal to be suppressed.
+created: 2026-09-20
+example_use_cases:
+- name: Bulk system-state collection to an attacker-chosen directory
+  description: A single invocation collects system logs, process lists, loaded kernel extensions, a System Profiler report, crash reports, disk usage, and network status into one archive. The -A option sets the archive name, -f sets the output directory, -u disables UI feedback, and -b suppresses the Finder window that would normally reveal the result, so the collection runs without visible signs. The resulting archive is compressed and staged for later exfiltration. Requires root.
+  code: sysdiagnose -u -b -A collection -f /private/tmp
+  tactics:
+  - Collection
+  - Discovery
+  tags: []
+- name: Collect only the unified log archive
+  description: The -r option restricts collection to the log archive, producing system_logs.logarchive, a complete copy of the host's unified log covering recent activity such as process launches, network events, and authentication. This is a smaller, faster, high-value pull than a full sysdiagnose. Combined with -u and -b it runs without UI feedback or a Finder reveal. The logarchive can be moved off the host and read offline with the log command. Requires root.
+  code: sysdiagnose -u -b -r -A logs -f /private/tmp
+  tactics:
+  - Collection
+  tags: []
+- name: Gather heap and virtual-memory diagnostics for a target process
+  description: Supplying a process name or pid as the argument adds process-specific collection - the list of malloc-allocated buffers in the process's heap, data about unreferenced malloc buffers, and the process's virtual memory regions. This exposes the memory layout of a chosen process and, for leaked buffers, their captured contents, which can surface sensitive in-memory data. Specify only one process at a time. Requires root.
+  code: sysdiagnose -u -b -A proc <TARGET_PROCESS>
+  tactics:
+  - Collection
+  - Discovery
+  tags: []
+- name: Collect diagnostics from an alternate mounted volume
+  description: The -V option runs collection against a specified root volume rather than the live system, letting an adversary who has mounted another disk, snapshot, or backup collect its diagnostic state without booting it. This scopes the harvest to attacker-accessible storage beyond the running OS. The volume must already be mounted and readable, and the command still requires root.
+  code: sysdiagnose -u -b -V <VOLUME_PATH> -A vol -f /private/tmp
+  tactics:
+  - Collection
+  tags: []
+paths:
+- /usr/bin/sysdiagnose
+detections:
+- name: "Process execution: /usr/bin/sysdiagnose invoked by a non-Apple parent or an unexpected user, especially with UI-suppressing flags (-u, -b) or a non-default output directory (-f) or archive name (-A)"
+  url: N/A
+- name: "File creation: appearance of a sysdiagnose output directory or archive containing system_logs.logarchive in /var/tmp or an unusual, writable location"
+  url: N/A
+- name: "Behavioral: reads of a collected system_logs.logarchive by a process that is not part of Apple diagnostics, or a sysdiagnose run followed shortly by archive movement toward network or removable-storage egress"
+  url: N/A
+resources:
+- name: sysdiagnose(1) manual page
+  url: https://keith.github.io/xcode-man-pages/sysdiagnose.1.html
+- name: "Apple: Run system diagnostics in Activity Monitor on Mac"
+  url: https://support.apple.com/guide/activity-monitor/run-system-diagnostics-actmntr2225/mac
+- name: "The Eclectic Light Company: Explainer - sysdiagnose and logarchives"
+  url: https://eclecticlight.co/2026/06/27/explainer-sysdiagnose-and-logarchives/
+- name: "SentinelLabs: macOS Incident Response Part 1 - Collecting Device, File & System Data"
+  url: https://www.sentinelone.com/labs/macos-incident-response-part-1-collecting-device-file-system-data/
