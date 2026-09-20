@@ -1,0 +1,78 @@
+name: nettop
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Attribute live network sockets and routes to the processes that own them.
+full_description: >-
+  nettop is a macOS network monitor that lists open sockets or the routing table and updates their
+  counters periodically. Unlike netstat, it groups every socket under the process that owns it, so a
+  single run names both the remote peers a Mac is talking to and the local process behind each
+  connection - including any EDR, MDM, or management agent phoning home. It runs without root or a TCC
+  grant, is a signed Apple binary, and offers a non-interactive logging mode (-l for raw output, -L for
+  CSV) that emits a fixed number of samples and quits, making it usable directly from a dropper or over
+  a non-interactive shell. That combination makes it attractive to an attacker for network-connection
+  discovery that needs no privileges and leaves no custom tooling on disk. It is also useful for defense
+  evasion reconnaissance - nettop is absent from several common network-discovery detection rules that
+  key on netstat, lsof, and ss, so choosing it over those tools can sidestep that telemetry.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate every process with active network sockets, without root
+    description: >-
+      The -P flag prints a per-process summary and -l 1 runs a single non-interactive sample in raw form
+      and exits, so the output is scriptable from a dropper rather than an interactive terminal. No root
+      or TCC grant is required. -n disables address-to-name resolution, which avoids generating DNS
+      lookups that could alert defenders and speeds the run. The result names each local process holding
+      TCP sockets and the remote peers it talks to, revealing internal hosts this Mac communicates with
+      and any security or management agent's outbound connections.
+    code: nettop -P -n -m tcp -l 1
+    tactics:
+      - Discovery
+    tags: []
+  - name: Profile a named security or management agent's outbound connections
+    description: >-
+      The -p flag selects a process by name or pid (and may be repeated), restricting the display to that
+      process. Pointed at an EDR, MDM, or telemetry agent, it shows the endpoints that agent is talking
+      to without touching its files or configuration, letting an attacker learn where monitoring data is
+      sent before acting. The process name must exactly match the name nettop shows, which may be
+      truncated. This runs without root.
+    code: nettop -P -n -p <PROCESS_NAME> -l 1
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+  - name: Log per-process network activity to CSV for offline analysis
+    description: >-
+      The -L flag switches to CSV logging mode and emits the given number of samples (0 means unlimited)
+      as raw periodic output even when stdout is a terminal, and -x prints exact byte counts instead of
+      human-readable suffixes. Redirecting to a file captures which processes talk to which peers over a
+      window - enough to map beacon cadence or an agent's reporting interval - from an unprivileged signed
+      binary. The file can then be copied off the host and mined later.
+    code: nettop -x -n -L 0 -m tcp > <OUTFILE>.csv
+    tactics:
+      - Discovery
+      - Collection
+    tags:
+      - logging
+  - name: Enumerate the routing table
+    description: >-
+      Passing route to -m monitors the routing table instead of sockets. A single -l 1 sample returns the
+      host's known routes and gateways, showing which networks are reachable and how traffic is directed -
+      information useful for planning lateral movement. This requires no privileges.
+    code: nettop -m route -n -l 1
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/nettop
+detections:
+  - name: "Execution of /usr/bin/nettop, particularly with logging flags (-l or -L) or -P, outside an expected administrator or monitoring context"
+    url: N/A
+  - name: "Correlation of nettop -L or -l output redirected to a file, followed by that file being read, archived, or transferred off the host"
+    url: N/A
+resources:
+  - name: "nettop(1) manual page - Apple / Xcode man pages"
+    url: https://keith.github.io/xcode-man-pages/nettop.1.html
+  - name: "macOS: Who's Behind This Network Connection? - SANS Internet Storm Center"
+    url: https://isc.sans.edu/diary/30160
+  - name: "Debugging network connections on macOS with nettop - Michael Maclean"
+    url: https://mgdm.net/weblog/nettop/
+acknowledgements:
+  - Xavier Mertens (SANS ISC, unprivileged connection-to-process attribution with nettop)
