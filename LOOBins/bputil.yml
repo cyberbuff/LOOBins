@@ -1,0 +1,132 @@
+name: bputil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read and rewrite the Apple silicon boot security policy (LocalPolicy).
+full_description: >-
+  bputil is Apple's command-line front end to the BootPolicy library on Apple silicon Macs. It reads and rewrites the
+  LocalPolicy, an Image4 structure signed by the Secure Enclave Processor and evaluated by iBoot at every boot, which
+  decides whether the machine runs in Full, Reduced or Permissive Security, whether third-party kernel extensions may
+  be loaded, whether the Signed System Volume is verified, whether the CTRR hardware register keeps kernel memory
+  read-only, whether iBoot enforces its allow list for the boot-args NVRAM variable, and whether an MDM may install
+  kexts and older software. Apple's man page states the tool "is not meant for normal users or even sysadmins", that
+  it is "not to be used in production environments", and that it can make a system "much weaker and therefore easier
+  to compromise". The read path (-d, -e, -j) runs from a normally booted macOS as root, needs no reboot and no
+  LocalPolicy signing credentials, so it is a precise way to learn whether a host has already been downgraded and
+  which kernel-level techniques are therefore available. The write path is gated by boot environment, and the man page
+  states a different gate per option: turning off kext restrictions, SSV, CTRR, boot-args filtering or MDM restrictions
+  (-k, -s, -c, -a, -m) and setting Permissive Security (-n) require One True Recovery (1TR), the recoveryOS reached by
+  holding the power button at boot, and a recoveryOS paired to the target install; setting Reduced Security (-g) and
+  removing policies (-r, -z) require only a software-launched recoveryOS and have no pairing requirement. Every write
+  also needs the password of an administrator who is a volume owner on the target install, which is how the
+  Secure Enclave releases the LocalPolicy signing key. bputil is therefore a tool for an
+  attacker with hands on the machine, an insider, or an operator who can talk a user through the reboot, not for
+  malware running in macOS.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the boot security policy of every installed OS
+    description: >-
+      The -d and -e options print the LocalPolicy without modifying it, and -j renders that output as JSON. These run
+      from a normally booted macOS and require root, but no reboot, no recoveryOS and no LocalPolicy signing
+      credentials. The output reports the Security Mode (Full, Reduced or Permissive), 3rd Party Kexts Status, Signed
+      System Volume Status, Kernel CTRR Status, Boot Args Filtering Status and SIP Status, along with the Unique Chip
+      ID (ECID), Board ID, Chip ID and the APFS Volume Group UUID of each bootable install. An attacker who already has
+      root uses this to decide whether kext-based or system-volume-based techniques are possible on the host before
+      attempting them, and to identify other OS installs on the same machine.
+    code: sudo bputil -e -j
+    tactics:
+      - Discovery
+    tags: []
+  - name: Permit third-party kernel extensions to load
+    description: >-
+      The -k option sets the LocalPolicy field that allows the AuxiliaryKernelCache to be Secure Enclave signed, which
+      is what makes third-party kexts loadable at all. The man page notes it automatically downgrades the machine to
+      Reduced Security if it is not already there. Once set, an attacker-supplied kext survives reboots and executes in
+      the kernel, above every user-space endpoint agent. The command only works from 1TR, the recoveryOS must be paired
+      to the targeted install, and it needs a volume owner's password. The kext itself must still carry a developer
+      signature.
+    code: bputil -k -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Disable Signed System Volume verification
+    description: >-
+      The -s option turns off Signed System Volume integrity enforcement and downgrades the machine to Permissive
+      Security. SSV is what stops an attacker editing binaries on the System volume for persistent execution, so
+      disabling it reopens the pre-Big Sur technique of backdooring a system binary or property list that the OS itself
+      launches. Requires 1TR, a paired recoveryOS and a volume owner's password. The man page states SSV cannot be
+      disabled while FileVault is enabled, and that modifications to the System volume are not expected to persist
+      across software updates.
+    code: bputil -s -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags: []
+  - name: Lift iBoot's boot-args restriction
+    description: >-
+      By default iBoot enforces a built-in allow list over the boot-args NVRAM variable so that the security-reducing
+      kernel options cannot be set from macOS. The -a option clears that restriction and downgrades the machine to
+      Permissive Security, after which boot-args values that weaken kernel enforcement take effect at the next boot.
+      Requires 1TR, a paired recoveryOS and a volume owner's password.
+    code: bputil -a -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Disable kernel CTRR memory protection
+    description: >-
+      The Configurable Text Read-only Region is a hardware register that locks kernel memory as non-writable once boot
+      completes. The -c option stops iBoot locking it and downgrades the machine to Permissive Security. Apple
+      documents the legitimate purpose as DTrace kernel hooks and kext debugging, and states that without CTRR it is
+      "much easier for an attacker to modify the kernel with exploits" - a memory-corruption bug that would otherwise
+      be blocked from patching kernel text becomes a path to a kernel rootkit. Requires 1TR, a paired recoveryOS and a volume
+      owner's password.
+    code: bputil -c -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Defense Evasion
+    tags:
+      - kernel
+  - name: Delete the LocalPolicy of a bootable OS
+    description: >-
+      The -r option removes the macOS and paired recoveryOS policies for a given APFS Volume Group UUID, and -z removes
+      the policies of every volume group not currently present - which, per the man page warning, includes bootable
+      external drives that merely happen to be disconnected. Without a SEP-signed LocalPolicy iBoot has nothing to
+      evaluate for that install, and the man page states the tool can render a system unbootable. These two options are
+      less constrained than the downgrades above: their boot environment requirement is software-launched recoveryOS or
+      1TR and their pairing requirement is none, so a recoveryOS session can destroy the policy of installs it is not
+      paired with. Use the read path first to collect the target UUIDs.
+    code: bputil -r <VOLUME_GROUP_UUID> -u <ADMIN_USER> -p <PASSWORD>
+    tactics:
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/bputil
+detections:
+  - name: "Process execution of /usr/bin/bputil with a policy-modifying flag (-n, -g, -k, -c, -a, -s, -m, -r, -z)"
+    url: N/A
+  - name: "Process execution of /usr/bin/bputil with -p or --password in the argument vector, placing a volume owner's password in argv where EndpointSecurity exec telemetry and shell history capture it"
+    url: N/A
+  - name: "Baseline 'bputil -d' per host and alert when Security Mode leaves Full, or when 3rd Party Kexts Status, Signed System Volume Status, Kernel CTRR Status or Boot Args Filtering Status deviates from its default"
+    url: https://derflounder.wordpress.com/2021/07/23/monitoring-startup-security-settings-on-apple-silicon-macs/
+  - name: "Monitor the LocalPolicy Image4 tags: smb0 (globally signed boot objects), smb1 and smb2 (SEP-signed custom kernel collection and AuxiliaryKernelCache), smb3 (opt-in to device management) and sip0-sip3 (SIP bits, SSV root hash verification, CTRR lock, boot-args allow list)"
+    url: https://support.apple.com/guide/security/contents-a-localpolicy-file-mac-apple-silicon-secc745a0845/web
+  - name: "Correlate an unexpected reboot into recoveryOS with a subsequent change in reported boot security state; the write path requires a recoveryOS session and therefore a reboot that leaves a gap in endpoint telemetry"
+    url: N/A
+resources:
+  - name: "bputil(1) man page"
+    url: https://keith.github.io/xcode-man-pages/bputil.1.html
+  - name: "Apple Platform Security: Contents of a LocalPolicy file for a Mac with Apple silicon"
+    url: https://support.apple.com/guide/security/contents-a-localpolicy-file-mac-apple-silicon-secc745a0845/web
+  - name: "Apple Platform Security: Boot process for a Mac with Apple silicon"
+    url: https://support.apple.com/guide/security/boot-process-secac71d5623/web
+  - name: "Apple Platform Security: Signed System Volume security"
+    url: https://support.apple.com/guide/security/signed-system-volume-security-secd698747c9/web
+  - name: "Apple Deployment: Use secure and bootstrap tokens"
+    url: https://support.apple.com/guide/deployment/use-secure-and-bootstrap-tokens-dep24dbdcf9e/web
+  - name: "Checking bootable systems using bputil on Apple silicon"
+    url: https://eclecticlight.co/2024/04/01/checking-bootable-systems-using-bputil-on-apple-silicon/
+  - name: "Mastering Secure Boot on Apple silicon"
+    url: https://eclecticlight.co/2024/09/09/mastering-secure-boot-on-apple-silicon/
+  - name: "Monitoring Startup Security settings on Apple Silicon Macs"
+    url: https://derflounder.wordpress.com/2021/07/23/monitoring-startup-security-settings-on-apple-silicon-macs/
+acknowledgements:
+  - Howard Oakley (The Eclectic Light Company) for documenting the bputil read path and LocalPolicy behaviour in practice
+  - Rich Trouton (Der Flounder) for the 'bputil -d' approach to monitoring startup security settings across a fleet
