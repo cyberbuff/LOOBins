@@ -1,0 +1,48 @@
+name: kextunload
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Terminate I/O Kit driver instances and unload loaded kernel extensions (kexts).
+full_description: The kextunload binary is a macOS command-line utility that terminates the I/O Kit service instances associated with a loaded kernel extension and unloads the kext's code and personalities from the kernel. It must run with superuser privileges, and the unload fails if another loaded kext still depends on the target. Apple has deprecated it in favor of "kmutil unload", but it remains present on current macOS and installers still invoke it. It is attractive to an attacker because it provides a formal, built-in mechanism to unload the kernel-level components of security products that still ship as kexts, disabling host monitoring, and because malware installers have shipped it to unload their own rootkit kexts during installation or update. On macOS 11 and later many vendors moved to System Extensions, which kextunload cannot remove; the abuse below applies to components still delivered as legacy kexts.
+created: 2026-09-20
+example_use_cases:
+  - name: Unload a security product's kernel extension to impair defenses
+    description: Run as root, kextunload unloads a loaded kext by its CFBundleIdentifier, terminating its IOService instances and removing its code from the kernel. An endpoint security product whose monitoring component is a legacy kext can be disabled this way, blinding host detection. The unload fails if another loaded kext depends on the target, which can be checked first with kextstat.
+    code: sudo kextunload -b <SECURITY_KEXT_BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Unload a rootkit's own kext during install or update
+    description: The FinSpy (FinFisher) macOS malware's binary carries the string /sbin/kextunload alongside its logind.kext, logind.plist, and launchctl load/unload references, indicating its installer is equipped to unload its own logind.kext process-hiding rootkit component. The kext unlinks a target process from the kernel process list to conceal it. This requires root, and on modern macOS the kext must be signed to load.
+    code: sudo kextunload /System/Library/Extensions/logind.kext
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Terminate an I/O Kit driver's service instances without unloading the kext
+    description: The -c flag terminates all instances of a named IOService class in the I/O Registry without unloading the defining kext or its personalities, and -p terminates services and removes personalities only. An attacker can use this to stop a security driver from matching devices and monitoring while the kext stays resident, avoiding a full kext-unload event. Requires root.
+    code: sudo kextunload -c <IOSERVICE_CLASSNAME>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Suppress unload output to reduce forensic noise
+    description: The -q (quiet) flag suppresses all informational and error messages during the unload, so removing a monitoring kext produces no stdout or console output that a defender or a logging pipeline might otherwise capture. Requires root.
+    code: sudo kextunload -q -b <SECURITY_KEXT_BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /sbin/kextunload
+detections:
+  - name: "Elastic: Attempt to Unload Elastic Endpoint Security Kernel Extension (process events where kextunload targets the security kext)"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/defense_evasion_unload_endpointsecurity_kext
+  - name: "Command-line monitoring: kextunload (or 'kmutil unload') invoked with -b or -c against a security vendor's CFBundleIdentifier or IOService class"
+    url: N/A
+resources:
+  - name: "FinFisher Filleted: a triage of the FinSpy (macOS) malware (Objective-See)"
+    url: https://objective-see.org/blog/blog_0x4F.html
+  - name: "MITRE ATT&CK T1562.001 (Impair Defenses: Disable or Modify Tools)"
+    url: https://attack.mitre.org/techniques/T1562/001/
+  - name: "Atomic Red Team T1547.006 (Kernel Modules and Extensions)"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1547.006/T1547.006.md
+  - name: "kextunload man page (ss64)"
+    url: https://ss64.com/mac/kextunload.html
+acknowledgements:
+  - Patrick Wardle (Objective-See, FinSpy macOS analysis)
