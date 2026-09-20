@@ -1,0 +1,58 @@
+name: brctl
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Manage the CloudDocs daemon that syncs iCloud Drive.
+full_description: The brctl binary is the command-line control utility for the CloudDocs daemon (bird), the per-user process that syncs iCloud Drive. It runs in the context of the calling user and talks to that user's iCloud session, so it exposes only the signed-in user's own cloud-stored data and needs no root or TCC grant for it. Its subcommands dump the CloudDocs database, monitor container activity in real time, list non-local document versions, and collect the user's mobile documents into a diagnosis archive. For an attacker with code execution as a user who is signed into iCloud Drive, brctl is a native way to inventory and stage cloud-stored data from a shell, including items that are not materialised on local disk, without touching third-party tooling.
+created: 2026-09-20
+example_use_cases:
+  - name: Inventory iCloud Drive by dumping the CloudDocs database
+    description: The dump subcommand writes out the CloudDocs database, the daemon's record of every item in the user's iCloud Drive containers, including items stored only in iCloud and not materialised on local disk. It produces a single machine-readable inventory of file and folder names, containers, and per-item sync state in one pass. The -o flag redirects the output to a file for later collection.
+    code: brctl dump -o /tmp/clouddocs.txt
+    tactics:
+      - Collection
+      - Discovery
+    tags: []
+  - name: Collect the user's iCloud Drive documents into a diagnosis archive
+    description: The diagnose subcommand with --collect-mobile-documents bundles the user's mobile documents (the iCloud Drive containers under ~/Library/Mobile Documents) together with CloudDocs logs and sync state into an archive at the chosen output path. This gives an attacker a single, self-contained copy of the victim's cloud-synced documents staged for exfiltration, produced by a signed Apple binary. It runs as the logged-in user and needs no elevation; the archive can be large, so it is noisier than a targeted grab.
+    code: brctl diagnose --collect-mobile-documents <OUTPUT_PATH>
+    tactics:
+      - Collection
+    tags: []
+  - name: Monitor iCloud Drive activity in real time
+    description: The monitor subcommand uses NSMetadataQuery to watch a CloudDocs container and stream changes as they happen. An attacker can use it as passive surveillance of what documents the victim opens, edits, or syncs, and the --scope flag narrows the query to document metadata (DOCS), file data (DATA), or both. It requires only user-level code execution in a session signed into iCloud Drive.
+    code: brctl monitor --scope DOCS com~apple~CloudDocs
+    tactics:
+      - Collection
+      - Discovery
+    tags:
+      - monitoring
+  - name: Enumerate non-local versions of a sensitive document
+    description: The versions subcommand lists the non-local versions of a document held in iCloud, and with --all it also includes versions already cached locally. This exposes prior revisions of a file that are retained in iCloud but not present on disk, letting an attacker discover earlier content of a sensitive document (for example a version before a secret was removed). It requires only code execution as the user who owns the document.
+    code: brctl versions --all "<PATH>"
+    tactics:
+      - Discovery
+      - Collection
+    tags: []
+  - name: Stream CloudDocs daemon logs to observe sync activity
+    description: The log subcommand reads the CloudDocs daemon logs, and with --wait it follows them continuously like syslog -w. The stream surfaces document paths, container names, and sync events, giving an attacker a running view of the victim's iCloud Drive activity without reading the files themselves. It runs as the logged-in user and needs no elevation.
+    code: brctl log --wait
+    tactics:
+      - Discovery
+      - Collection
+    tags:
+      - logging
+paths:
+  - /usr/bin/brctl
+detections:
+  - name: "Command-line detection: brctl invoked with dump, diagnose, monitor, versions, or log by a non-interactive or unexpected parent process"
+    url: N/A
+  - name: "File creation detection: brctl writing a dump output file (dump -o) or a diagnose archive to a staging location such as /tmp or /private/tmp"
+    url: N/A
+  - name: "Endpoint Security / unified log telemetry can record brctl process executions and their arguments for hunting via the Elastic custom macOS unified logs integration"
+    url: https://www.elastic.co/docs/reference/integrations/unifiedlogs
+resources:
+  - name: "brctl(1) manual page (Apple xcode-man-pages mirror)"
+    url: https://keith.github.io/xcode-man-pages/brctl.1.html
+  - name: "Diagnosing iCloud problems using brctl, sync budgets and throttles (The Eclectic Light Company)"
+    url: https://eclecticlight.co/2018/04/12/diagnosing-icloud-problems-using-brctl-sync-budgets-and-throttles/
+  - name: "icloud-tools: notes on brctl download/evict removal in macOS Sonoma 14+"
+    url: https://github.com/icanhasjonas/icloud-tools
