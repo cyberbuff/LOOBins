@@ -66,8 +66,6 @@ paths:
 detections:
   - name: "Command-line detection: /usr/bin/ldapsearch invoked with directory-recon filters (servicePrincipalName=*, userAccountControl bitwise filters, objectClass=user/computer against a domain naming context)"
     url: N/A
-  - name: "Detecting LDAP reconnaissance (Black Lantern Security) - anomalous bulk and filtered LDAP query patterns against a domain controller"
-    url: https://blog.blacklanternsecurity.com/p/detecting-ldap-recoannaissance
 resources:
   - name: "ldapsearch(1) manual page"
     url: https://keith.github.io/xcode-man-pages/ldapsearch.1.html
