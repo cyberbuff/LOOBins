@@ -1,0 +1,111 @@
+name: mkpassdb
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Create, read, and modify the macOS Open Directory Password Server database directly.
+full_description: |
+  mkpassdb is the low-level administration tool for the Open Directory Password Server database. It performs
+  operations the Password Server protocol deliberately refuses to expose, including creating and destroying the
+  database, generating the RSA keys that establish the server's identity, managing the trusted SASL mechanism
+  list, and creating administrator accounts. It reads and writes the on-disk database at
+  /var/db/authserver/authservermain directly, bypassing the running PasswordService daemon.
+
+  With the exception of -list, every command must run as root; the binary exits otherwise. Because it talks to
+  the database file rather than the daemon, an attacker who has already gained root on an Open Directory master
+  or replica can use mkpassdb to read every account slot out of the password store, promote a slot
+  to administrator, or relax the global policy that governs every account. It is a signed
+  Apple binary present on macOS, so its use introduces no new file to the host. The important prerequisite is
+  that the /var/db/authserver database only exists on a machine that ran, or was bound as a replica of, an Open
+  Directory Password Server. On a plain client Mac these files are absent and the read commands have nothing to
+  return.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate every account slot in the Password Server database
+    description: |
+      The -dump command outputs all of the user IDs and their corresponding user names held in the Open
+      Directory Password Server database. Run as root against /var/db/authserver/authservermain, it reads the
+      account store directly rather than through the PasswordService daemon, giving an attacker a full roster of
+      every authenticating principal on the server. Elastic's "Dumping Account Hashes via Built-In Commands"
+      prebuilt rule matches this exact invocation (process.name == "mkpassdb" and process.args == "-dump")
+      alongside the dscl and defaults ShadowHashData paths. This requires root and only returns data on a host
+      that runs an Open Directory Password Server; on a standalone client the database does not exist.
+    code: |
+      mkpassdb -dump
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Dump a specific password slot by ID
+    description: |
+      When a slot ID is passed to -dump, mkpassdb prints detailed information for that one slot rather than the
+      full roster. An attacker who has identified a target account from the full dump uses this to pull the
+      per-account detail for a specific principal. This still requires root and an existing Password Server
+      database.
+    code: mkpassdb -dump <SLOT_ID>
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Dump the Password Server database with expanded columns
+    description: |
+      The -v option adds further columns to -dump output. An attacker uses verbose mode to pull additional
+      per-account detail beyond the default columns when dumping the Password Server database. This still
+      requires root and an existing Password Server database.
+    code: mkpassdb -dump -v
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Promote an account slot to Password Server administrator
+    description: |
+      The -setadmin command promotes a slot ID to have administrator privileges for the password server, and by
+      default assigns the most privileged rank (0). An attacker with root uses this to grant an account they
+      control full administrative authority over the Password Server database, establishing durable privileged
+      access that survives beyond the current session. Requires root and an existing Password Server database.
+    code: |
+      mkpassdb -setadmin <SLOT_ID> 0
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags: []
+  - name: Weaken the global account policy for every user
+    description: |
+      The -setglobalpolicy command sets the default policies that apply to all users in the Password Server
+      database. An attacker with root uses this to relax password expiry, lockout, or complexity controls
+      across every account at once, removing the constraints that would otherwise age out or trip up planted
+      credentials. The man page documents the quoted "policy=value" argument format; specific policy keys are
+      not enumerated there, so the exact keys must be confirmed against the target before use. Requires root and
+      an existing Password Server database.
+    code: |
+      mkpassdb -setglobalpolicy "<POLICY>=<VALUE>"
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags:
+      - policy
+  - name: Enumerate available SASL authentication mechanisms
+    description: |
+      The -list command outputs all of the SASL mechanisms available to the password server, and is the only
+      mkpassdb command that does not require root. The output reveals which authentication mechanisms are
+      offered, including legacy ones the man page marks as always weak (SMB-NT, SMB-LAN-MANAGER, CRYPT, APOP).
+      An attacker uses this to identify which weak mechanisms are present for a downgrade or offline-cracking
+      attempt against the server.
+    code: |
+      mkpassdb -list
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/sbin/mkpassdb
+detections:
+  - name: "Elastic: Dumping Account Hashes via Built-In Commands (process.name == mkpassdb and process.args == -dump)"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/credential_access_dumping_hashes_bi_cmds.toml
+  - name: "Endpoint process monitoring: execution of /usr/sbin/mkpassdb with -dump, -setadmin, or -setglobalpolicy, which fall outside normal Open Directory administration"
+    url: N/A
+  - name: "File access monitoring: reads of /var/db/authserver/authservermain by a process other than the PasswordService daemon"
+    url: N/A
+resources:
+  - name: "Elastic prebuilt rule: Dumping Account Hashes via Built-In Commands"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/credential_access_dumping_hashes_bi_cmds
+  - name: "mkpassdb(8) manual page"
+    url: https://www.unix.com/man-page/osx/8/mkpassdb/
+acknowledgements:
+  - Elastic Security detection-rules project (mkpassdb -dump credential-dumping detection)
