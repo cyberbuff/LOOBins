@@ -1,0 +1,53 @@
+name: klist
+author: Hare Sudhan (@cyb3rbuff)
+short_description: List and inspect cached Kerberos tickets in the macOS credential cache.
+full_description: klist is the Heimdal Kerberos ticket-listing tool bundled with every macOS install. On macOS /usr/bin/klist is a symlink to kcc and the program dispatches on argv[0], so invoking it as klist exposes the read-only listing interface documented in klist(1) - short flags for enumerating caches, testing for a valid Ticket Granting Ticket, and printing ticket encryption types, flags, and expiry. macOS stores tickets by default in a daemon-managed KCM cache rather than in files on disk, and on an Active-Directory-bound Mac, or on a Mac using the Local KDC for Apple-to-Apple sharing, a signed-in user's cache holds a TGT and service tickets. klist is a signed Apple binary present on every host and needs no elevation to read the invoking user's own cache, so an attacker with code execution reaches for it first - it is the same reconnaissance command muscle-memoried from Windows and Linux Kerberos, and its output tells the attacker which domain identity is cached, which realm it belongs to, which service tickets already exist, and which tickets use weak encryption types worth stealing, all before any ticket manipulation. The extraction and manipulation subcommands (copy_cred_cache, kgetcred, kswitch) are reached through the kcc name and are documented separately in the kcc LOOBin.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate every Kerberos credential cache and its tickets
+    description: The -l/--list-caches flag lists the current user's credential caches and -v/--verbose prints the full detail of each ticket - principal, server, encryption type, auth and end times, and addresses. This reads only the invoking user's own caches and needs no elevation. It reveals whether the host holds a usable TGT, which realm and identity it belongs to, and which service tickets are already cached, the reconnaissance an attacker performs before attempting pass-the-ticket or ticket extraction with kcc.
+    code: klist -l -v
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+  - name: Test silently for a valid TGT before Kerberos-based lateral movement
+    description: The -s/-t/--test flag tests for an active and valid TGT for the user's local realm in the credential cache and reports the result through its exit status rather than printing ticket contents. An implant can use this as a quiet gate - only proceeding to request service tickets or mount Kerberos-authenticated shares when a usable TGT exists - which avoids the noisier verbose listing and any failed authentication attempts against a host with no cached credentials. Operates on the invoking user's own cache and needs no elevation.
+    code: klist -s
+    tactics:
+      - Discovery
+    tags: []
+  - name: Read tickets from a credential cache file copied or planted on disk
+    description: The -c/--cache flag lists a named credential cache instead of the default. Pointed at a FILE type ccache path it reads tickets straight from a file on disk - for example a ccache an attacker copied out of another user's session with kcc copy_cred_cache, or one dropped by other tooling - and prints the principal and ticket detail without touching the live KCM cache. Reading a file the attacker already controls needs no elevation.
+    code: klist -c FILE:/tmp/.tkt.ccache -v
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Identify weak-encryption and forwardable tickets worth stealing
+    description: The -f flag prints ticket flags in short form (including F for forwardable and R for renewable) and -v/--verbose prints each ticket's encryption type. Together they let an attacker triage the cache before extraction - spotting tickets that use a weak encryption type, whose service-account key is easier to crack offline, and forwardable TGTs that are the most valuable to copy out and replay. This is read-only reconnaissance over the invoking user's own cache and needs no elevation.
+    code: klist -v -f
+    tactics:
+      - Discovery
+      - Credential Access
+    tags: []
+paths:
+  - /usr/bin/klist
+detections:
+  - name: "Command line argument detection: klist invoked with -l, -c/--cache, -s/-t/--test, or -f flags by a non-interactive or unexpected parent process (process.name klist is a symlink to kcc, so match on argv[0] as well as the kcc image path)"
+    url: N/A
+  - name: "Elastic: Kerberos Cached Credentials Dumping - matches the related kcc copy_cred_cache extraction that klist reconnaissance typically precedes"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/credential_access_kerberosdump_kcc.toml
+  - name: "Endpoint Security Framework: monitor processes loading Heimdal.framework outside expected Kerberos utilities"
+    url: N/A
+resources:
+  - name: "klist man page (Xcode man pages)"
+    url: https://keith.github.io/xcode-man-pages/klist.1.html
+  - name: "Apple Heimdal klist source (klist.c)"
+    url: https://github.com/apple-oss-distributions/Heimdal/blob/main/kuser/klist.c
+  - name: "When Kirbi walks the Bifrost (SpecterOps, Cody Thomas)"
+    url: https://posts.specterops.io/when-kirbi-walks-the-bifrost-4c727807744f
+  - name: "MITRE ATT&CK T1558.005 Steal or Forge Kerberos Tickets: Ccache Files"
+    url: https://attack.mitre.org/techniques/T1558/005/
+acknowledgements:
+  - Cody Thomas (@its-a-feature, SpecterOps - Bifrost and macOS Kerberos research)
