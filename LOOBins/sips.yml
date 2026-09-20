@@ -1,0 +1,51 @@
+name: sips
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Resize, recompress, and strip metadata from images, or execute a JavaScript file, from the command line.
+full_description: sips (Scriptable Image Processing System) is Apple's built-in command-line tool for querying and modifying raster image files and ColorSync ICC profiles. It resamples, crops, rotates, converts formats, edits embedded properties, and since Big Sur can execute a JavaScript file to modify or generate images. Because it is a signed, notarized Apple binary present on every macOS install, an attacker can use it as part of a collection-and-exfiltration chain without dropping tooling. In practice it appears as the post-processing half of a screenshot-theft routine, shrinking and recompressing captured images before they are encoded and exfiltrated, and it can also delete identifying image metadata to reduce forensic artifacts.
+created: 2026-09-20
+example_use_cases:
+  - name: Downscale and recompress a captured screenshot before exfiltration
+    description: After a screenshot is taken (for example with screencapture) and before it is base64-encoded and sent to a C2 server, sips resamples it to smaller dimensions with -z/--resampleHeightWidth and lowers JPEG quality with -s/--setProperty formatOptions to a percentage value in a single invocation. The smaller, recompressed file is then easier to stage and exfiltrate. This is the exact post-processing sequence documented in the GMERA/Stockfolio macOS reconnaissance scripts. No elevated privileges are required; sips operates on files the current user can read and write.
+    code: "sips -z 500 800 -s formatOptions 50 /tmp/screen.jpg"
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Strip identifying metadata from an image to frustrate forensics
+    description: sips can delete writable image properties with -d/--deleteProperty. Removing fields such as make, model, artist, and copyright, or clearing color-management dictionaries with --deleteColorManagementProperties, strips camera, device, and authorship markers from images an operator drops onto or exfiltrates from a host, reducing attribution artifacts. This modifies the file in place and requires only write access to it.
+    code: "sips -d make -d model -d artist -d copyright --deleteColorManagementProperties <IMAGE_PATH>"
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Execute a JavaScript file through a signed Apple binary
+    description: sips accepts -j/--js to execute a JavaScript file, which runs the attacker-supplied script inside a legitimately signed and notarized Apple binary rather than a separately dropped interpreter, blending execution into expected image-processing telemetry. The documented object model exposed to the script (the sips global, Canvas, Image, and Output objects) is image-oriented and is not a general-purpose shell, so its offensive value is proxied JavaScript execution and process masquerading rather than arbitrary command execution.
+    code: "sips -j <SCRIPT_PATH>.js <IMAGE_PATH>"
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/sips
+detections:
+  - name: "Command-line argument detection: sips invoked with resampleHeightWidth (-z) or setProperty formatOptions (-s) against files in temporary or staging directories, especially with a non-interactive parent process shortly after a screencapture execution"
+    url: N/A
+  - name: "Process-lineage detection: screencapture followed by one or more sips executions and a base64 encoding of the same image file within a short time window by the same process tree, indicating a screenshot collection-and-exfiltration chain"
+    url: N/A
+  - name: "Command-line argument detection: sips invoked with -j or --js to execute a JavaScript file, which is uncommon in normal image-processing workflows"
+    url: N/A
+  - name: "Sigma: Screen Capture - macOS (detects the screencapture stage that typically precedes sips post-processing in this chain)"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_screencapture.yml
+resources:
+  - name: "Objective-See: The Mac Malware of 2019 (documents the screencapture + sips + base64 exfil routine)"
+    url: https://objective-see.org/blog/blog_0x53.html
+  - name: "ESET WeLiveSecurity: Mac cryptocurrency trading application rebranded, bundled with malware (GMERA/Stockfolio reconnaissance script using sips)"
+    url: https://www.welivesecurity.com/2020/07/16/mac-cryptocurrency-trading-application-rebranded-bundled-malware/
+  - name: "sips(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/sips.1.html
+  - name: "Unofficial documentation of the sips JavaScript API"
+    url: https://manicmaniac.github.io/sips-js-api/
+  - name: "MITRE ATT&CK T1113: Screen Capture"
+    url: https://attack.mitre.org/techniques/T1113/
+acknowledgements:
+  - Patrick Wardle (Objective-See, documented the screencapture and sips exfiltration chain)
+  - Marc-Etienne M. Leveille (ESET, documented the GMERA/Stockfolio reconnaissance script)
