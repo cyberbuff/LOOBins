@@ -1,0 +1,96 @@
+name: shortcuts
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Run, list, view, and sign macOS Shortcuts from the command line.
+full_description: |-
+  shortcuts is the command-line front end for the Shortcuts app, introduced in macOS Monterey. It can run
+  a shortcut by name or identifier, list the shortcuts and folders in the current user's library, view a
+  shortcut, and sign a shortcut file for distribution. It is attractive to an attacker because a shortcut
+  can contain Run Shell Script and Run AppleScript actions, and "shortcuts run" does not execute those
+  actions as a child of the calling shell. The work is dispatched through the WorkflowKit XPC services
+  (BackgroundShortcutRunner.xpc, which in turn drives the Full-Disk-Access-entitled ShortcutsMacHelper.xpc),
+  so the shell that ultimately runs is parented to those helpers rather than to the terminal. That breaks
+  process-lineage detection tuned to shell-spawns-shell, and lets a planted shortcut act inside the
+  Shortcuts app's TCC grants. Shortcut definitions live in ~/Library/Shortcuts/Shortcuts.sqlite; the
+  binary itself only runs, lists, views, and signs shortcuts, so creating or editing a shortcut is done
+  in the Shortcuts app or by importing a crafted .shortcut file.
+created: 2026-09-20
+example_use_cases:
+- name: Execute a shell payload through the Shortcuts XPC helpers
+  description: |-
+    "shortcuts run" launches a shortcut that contains a Run Shell Script action. The command is not run as
+    a child of the invoking shell; the request is handed to BackgroundShortcutRunner.xpc, which drives
+    ShortcutsMacHelper.xpc, and the shell process is parented to those WorkflowKit helpers. This defeats
+    detection logic keyed to a terminal or scripting interpreter spawning a shell. Prerequisite: a shortcut
+    named <SHORTCUT> containing a Run Shell Script (or Run AppleScript) action must already exist in the
+    user's library, built in the Shortcuts app or imported as a signed .shortcut file, and scripting
+    actions must be enabled for that shortcut.
+  code: shortcuts run "<SHORTCUT>"
+  tactics:
+  - Execution
+  - Defense Evasion
+  tags: []
+- name: Enumerate a user's shortcuts with their identifiers
+  description: |-
+    "shortcuts list --show-identifiers" prints every shortcut in the current user's library and appends each
+    item's UUID. This identifies automations with shell, AppleScript, or file-access actions worth reusing and
+    provides the identifiers needed to target a specific shortcut with "run". It requires user-level access,
+    no root and no TCC grant.
+  code: shortcuts list --show-identifiers
+  tactics:
+  - Discovery
+  tags: []
+- name: Enumerate a user's shortcut folders
+  description: |-
+    "shortcuts list --folders" lists the folders that organize the current user's shortcuts. It can reveal
+    categories of automation worth investigating without needing root access or a TCC grant.
+  code: shortcuts list --folders
+  tactics:
+  - Discovery
+  tags: []
+- name: Collect sensitive data through a shortcut running in the Shortcuts TCC context
+  description: |-
+    A shortcut whose actions read Photos, Contacts, files, or the clipboard runs inside the Shortcuts app's
+    privacy context rather than the terminal's. "shortcuts run" can drive such a shortcut and capture its
+    output, using --output-path - to write results to stdout (or a file) and --input-path to feed it a
+    target path. If the user has granted the Shortcuts app the relevant TCC access (for example Full Disk
+    Access or Contacts), a planted shortcut inherits that access without prompting the operator's own
+    process. Prerequisite: the data-reading shortcut must already exist in the library, and the Shortcuts
+    app must hold the corresponding TCC grant.
+  code: shortcuts run "<COLLECTOR_SHORTCUT>" --input-path <TARGET_PATH> --output-path -
+  tactics:
+  - Collection
+  tags: []
+- name: Sign a malicious shortcut for distribution
+  description: |-
+    "shortcuts sign" produces a signed .shortcut file from an input shortcut. With --mode anyone the file is
+    notarized via iCloud so that any recipient can import it; --mode people-who-know-me signs it locally for
+    contacts only. An attacker can package a shortcut that carries a shell or data-exfiltration action, sign
+    it so it imports without the unsigned-shortcut warning, and deliver it for the victim to add to their
+    library, where it can then be triggered with "shortcuts run".
+  code: shortcuts sign --mode anyone --input <PAYLOAD>.shortcut --output <SIGNED>.shortcut
+  tactics:
+  - Resource Development
+  - Defense Evasion
+  tags: []
+paths:
+- /usr/bin/shortcuts
+detections:
+- name: "Process lineage: a shell (sh/bash/zsh) whose ancestry is com.apple.WorkflowKit.BackgroundShortcutRunner or ShortcutsMacHelper rather than a terminal or login shell"
+  url: N/A
+- name: "Command-line detection: /usr/bin/shortcuts invoked with run, list, or sign from a non-interactive or scripted parent process"
+  url: N/A
+- name: "File monitoring: modification of ~/Library/Shortcuts/Shortcuts.sqlite (and its -wal/-shm journals) outside of Shortcuts.app activity"
+  url: N/A
+resources:
+- name: "macOS Monterey Shortcuts - First look (Csaba Fitzl / theevilbit)"
+  url: https://theevilbit.github.io/posts/monterey_shortcuts/
+- name: "Run shortcuts from the command line (Apple Shortcuts User Guide)"
+  url: https://support.apple.com/guide/shortcuts-mac/run-shortcuts-from-the-command-line-apd455c82f02/mac
+- name: "shortcuts(1) manual page"
+  url: https://keith.github.io/xcode-man-pages/shortcuts.1.html
+- name: "Details on Apple's Shortcuts Vulnerability: CVE-2024-23204 (Bitdefender)"
+  url: https://www.bitdefender.com/en-us/blog/labs/details-on-apples-shortcuts-vulnerability-a-deep-dive-into-cve-2024-23204
+- name: "CVE-2024-23204 (CVE.org record)"
+  url: https://www.cve.org/CVERecord?id=CVE-2024-23204
+acknowledgements:
+- Csaba Fitzl (@theevilbit, macOS Shortcuts persistence and XPC execution-chain research)
