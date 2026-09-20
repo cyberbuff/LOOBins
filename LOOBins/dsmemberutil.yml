@@ -1,0 +1,91 @@
+name: dsmemberutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query the macOS membership APIs to resolve effective group membership, UIDs, UUIDs, and SIDs.
+full_description: |
+  dsmemberutil is a command-line front end to the macOS membership API. It answers questions about
+  identity and group membership the way the kernel actually resolves them at access-check time, rather
+  than by reading flat files: it checks whether a user is a member of a group (including nested and
+  directory-provided groups), converts between UIDs/GIDs, UUIDs, and Windows SIDs, and flushes the local
+  membership cache. It is unprivileged and present on every macOS install, so an adversary who lands on a
+  host can use it for fast privilege triage - one command reveals whether the current or another account
+  is a local administrator - and, on Active Directory-bound hosts, to correlate macOS UIDs with AD SIDs.
+  Because it is a legitimate directory-services tool, its execution blends into normal management activity.
+created: 2026-09-20
+example_use_cases:
+  - name: Determine whether an account is a local administrator
+    description: |
+      checkmembership resolves effective membership against the membership API, so a single call answers
+      whether an account holds administrator rights on the host. Membership in the "admin" group (GID 80)
+      is what grants sudo and administrative rights on macOS. This runs as any user and requires no
+      privileges, making it a quick way to pick escalation targets or confirm the current user's standing.
+    code: dsmemberutil checkmembership -U <USERNAME> -G admin
+    tactics:
+      - Discovery
+    tags:
+      - groups
+  - name: Confirm the current user's effective admin membership
+    description: |
+      checkmembership can be driven by UID and GID directly. Because it queries the membership API rather
+      than parsing /etc/group, it reflects the membership the kernel enforces, including memberships
+      granted through nested groups or a bound directory. The output is the literal string "user is a
+      member of the group" or "user is not a member of the group".
+    code: dsmemberutil checkmembership -u $(id -u) -g 80
+    tactics:
+      - Discovery
+    tags:
+      - groups
+  - name: Resolve a UID to its GUID with getuuid
+    description: |
+      getuuid returns the UUID associated with a user (or group) given its UID. macOS file ACLs and
+      directory records key on UUIDs rather than numeric IDs, so resolving a UID to its GUID lets an
+      operator correlate an account with ACL entries and directory objects during enumeration. No
+      privileges are required.
+    code: dsmemberutil getuuid -u <UID>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Resolve a GUID back to its UID with getid
+    description: |
+      getid resolves a UUID back to a UID or GID, the inverse of getuuid. This lets an operator take a
+      UUID found in a file ACL or directory record and recover the numeric identity behind it during
+      enumeration. No privileges are required.
+    code: dsmemberutil getid -X <UUID>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Resolve a macOS account to its Active Directory SID
+    description: |
+      getsid returns the SID for a user or group given its UID, GID, or name. On a host bound to Active
+      Directory, an AD account resolves to its domain SID, letting an operator correlate macOS identities
+      with AD principals and pivot toward specific domain targets from a compromised Mac.
+    code: dsmemberutil getsid -U <DOMAIN_USERNAME>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Flush the membership cache to force new group rights to apply
+    description: |
+      flushcache clears the local membership cache. After an attacker with sufficient rights modifies
+      group membership (for example, adding an account to the admin group via dscl or dseditgroup), the
+      kernel may continue to enforce the previously cached membership until the cache expires, a reboot,
+      or a re-login. Flushing the cache forces the new membership to be re-resolved immediately, so the
+      granted rights take effect without waiting or triggering a session change. This only affects
+      caching; the group change itself is a separate, privileged step.
+    code: dsmemberutil flushcache
+    tactics:
+      - Privilege Escalation
+    tags:
+      - groups
+paths:
+  - /usr/bin/dsmemberutil
+detections:
+  - name: "Elastic: Enumeration of Users or Groups via Built-in Commands (process.name is dsmemberutil)"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/discovery_users_domain_built_in_commands.toml
+  - name: "Command Line Argument Detection: dsmemberutil invoked with checkmembership, getsid, or flushcache, especially from a non-terminal or untrusted parent process"
+    url: N/A
+resources:
+  - name: "dsmemberutil(1) man page (keith.github.io mirror)"
+    url: https://keith.github.io/xcode-man-pages/dsmemberutil.1.html
+  - name: "dsmemberutil - View user and group rights in macOS (ss64)"
+    url: https://ss64.com/mac/dsmemberutil.html
+  - name: "Elastic Security: Enumeration of Users or Groups via Built-in Commands"
+    url: https://www.elastic.co/guide/en/security/current/enumeration-of-users-or-groups-via-built-in-commands.html
