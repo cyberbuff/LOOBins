@@ -46,6 +46,5 @@ resources:
     url: https://attack.mitre.org/techniques/T1115/
   - name: "Atomic Red Team T1115: Execute commands from clipboard"
     url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1115/T1115.md
-acknowledgements:
   - name: "SentinelOne: 7 Kinds of Data Malware Steals from macOS Users (Pasteboard Contents)"
     url: https://www.sentinelone.com/blog/session-cookies-keychains-ssh-keys-and-more-7-kinds-of-data-malware-steals-from-macos-users/
