@@ -73,8 +73,6 @@ resources:
     url: https://keith.github.io/xcode-man-pages/ldapsearch.1.html
   - name: "External to DA, the OS X Way (Stephan Borosh) - using native macOS tools including ldapsearch for Active Directory enumeration"
     url: https://www.slideshare.net/slideshow/external-to-da-the-os-x-way/62021418
-  - name: "LDAP Enumeration: Unveiling the Double-Edged Sword of Active Directory (Palo Alto Unit 42)"
-    url: https://unit42.paloaltonetworks.com/lightweight-directory-access-protocol-based-attacks/
   - name: "MITRE ATT&CK T1087.002 - Account Discovery: Domain Account"
     url: https://attack.mitre.org/techniques/T1087/002/
   - name: "MITRE ATT&CK T1558.003 - Steal or Forge Kerberos Tickets: Kerberoasting"
