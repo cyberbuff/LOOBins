@@ -1,0 +1,61 @@
+name: system-override
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Configure persistent system overrides that relax macOS platform security behaviours.
+full_description: >-
+  The system-override binary configures persistent "system overrides" that change
+  specific macOS platform security and privacy behaviours. Its man page states that
+  some commands must be run from the Recovery OS and that the full usage statement is
+  only printed when the binary is run with no arguments. Two overrides that Apple
+  documents publicly suppress the camera privacy indicator:
+  legacy-camera-plugins-without-sw-camera-indication stops the menu-bar indicator from
+  appearing while a camera that uses older plugin software is in use, and
+  suppress-sw-camera-indication-on-external-displays hides the indicator on external
+  displays. Both are set from the Recovery OS with a <key>=on argument and persist
+  across reboots, which makes the binary a way for an attacker with Recovery access to
+  weaken the on-screen signal that a camera is recording. The suppression is scoped:
+  neither override hides the indicator for a modern built-in camera on the main display.
+created: 2026-09-20
+example_use_cases:
+  - name: Suppress the camera privacy indicator for legacy camera plugins
+    description: >-
+      Setting legacy-camera-plugins-without-sw-camera-indication=on from the Recovery OS
+      stops the camera privacy indicator from appearing in the menu bar while a camera
+      that relies on older plugin software is in use, as documented by Apple. An attacker
+      who can reach the Recovery OS uses this to remove the on-screen green dot for such a
+      camera, and the override persists across reboots. It does not affect a modern
+      built-in camera on the main display, and writing the override requires booting into
+      Recovery, so this is a hands-on technique rather than a remote one.
+    code: system-override legacy-camera-plugins-without-sw-camera-indication=on
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Suppress camera privacy indicators on external displays
+    description: >-
+      Setting suppress-sw-camera-indication-on-external-displays=on from the Recovery OS
+      hides the camera and microphone privacy indicators on external displays while an app
+      is full screen, as documented by Apple for macOS Sonoma 14.4 and later. The
+      indicators still appear on the Mac's main display. An attacker with Recovery access
+      uses this to remove the recording signal on an external monitor, and the override
+      persists across reboots.
+    code: system-override suppress-sw-camera-indication-on-external-displays=on
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/system-override
+detections:
+  - name: "Process execution of /usr/bin/system-override writing an override (an argument of the form <key>=on or <key>=off). The documented camera-indicator overrides are written from the Recovery OS, so a write logged from the full OS is unusual."
+    url: N/A
+  - name: "Process execution of system-override with the argument legacy-camera-plugins-without-sw-camera-indication=on or suppress-sw-camera-indication-on-external-displays=on, which suppress the camera privacy indicator."
+    url: N/A
+  - name: "macOS shows a warning in Privacy & Security settings when the camera privacy indicator has been disabled; the warning indicates the override is set."
+    url: https://support.apple.com/en-us/108387
+  - name: "A boot into the Recovery OS shortly before the camera privacy indicator stops appearing, since these overrides are written from Recovery."
+    url: N/A
+resources:
+  - name: "system-override(8) manual page"
+    url: https://manp.gs/mac/8/system-override
+  - name: "Apple Support: camera and video output devices after updating to macOS Sonoma 14.1"
+    url: https://support.apple.com/en-us/108387
+  - name: "Apple Support: Hide privacy indicators on external displays in macOS"
+    url: https://support.apple.com/en-us/118449
