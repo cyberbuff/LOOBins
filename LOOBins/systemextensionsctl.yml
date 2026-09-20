@@ -1,0 +1,120 @@
+name: systemextensionsctl
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Examine and manage macOS system extensions, including the Endpoint Security and Network Extension bundles that EDR products run as.
+full_description: >-
+  systemextensionsctl is the command-line front end to the System Extensions subsystem introduced in macOS
+  Catalina 10.15. It is intended for developers building DriverKit, Network Extension, and Endpoint Security
+  extensions. Its man page documents the list, reset, and developer subcommands, and the tool's own usage
+  output additionally exposes uninstall and gc. Modern macOS security
+  products no longer ship kernel extensions; they ship system extensions, so the inventory that
+  "systemextensionsctl list" prints is effectively a roster of the defensive software installed on the host,
+  along with each extension's activation state. That makes the tool a precise, built-in, unprivileged security
+  software discovery primitive. Its remaining subcommands operate on the other side of the same subsystem -
+  removing an individual extension, wiping all system extension state, or relaxing the checks the system
+  applies before it loads one. Those subcommands are gated behind root and System Integrity Protection being
+  disabled, so they are not a standalone bypass; they are what an adversary reaches for once SIP has already
+  been turned off, to remove the endpoint sensor or to get an attacker-supplied extension loaded from an
+  arbitrary path.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate installed security products and their activation state
+    description: >-
+      "systemextensionsctl list" prints every installed system extension with its team identifier, bundle
+      identifier, bundle version, developer name, usage description, and state. Because macOS EDR agents,
+      content filters, DNS proxies, and VPN clients are all delivered as Endpoint Security or Network
+      Extension bundles, this single command names the defensive stack on the host. The state field is the
+      operationally interesting part - "activated enabled" means the sensor is live, while "activated waiting
+      for user" means it is staged but has never been approved and is therefore not actually inspecting
+      anything, and "terminated waiting for uninstall on reboot" means it is already on its way out. Unlike
+      the uninstall, reset, and developer subcommands, list needs neither root nor SIP disabled, so an
+      adversary running as a standard user can fingerprint the host's defenses before deciding whether to
+      proceed.
+    code: systemextensionsctl list
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Uninstall a specific endpoint security extension
+    description: >-
+      "systemextensionsctl uninstall <teamID> <bundleID>" removes a single named system extension. The team
+      and bundle identifiers are exactly the values printed by "systemextensionsctl list", so enumeration and
+      removal chain directly. The tool accepts "-" in place of a team identifier to match an extension with an
+      empty Team ID. This requires root and, critically, requires System Integrity Protection to be disabled -
+      with SIP on, the tool refuses with "At this time, this tool cannot be used if System Integrity Protection
+      is enabled." An adversary therefore has to disable SIP first (a reboot into recoveryOS), which makes this
+      a post-SIP-bypass action rather than a bypass in itself. The extension is fully removed at the next
+      restart.
+    code: sudo systemextensionsctl uninstall <TEAM_ID> <BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Wipe all system extension state with reset
+    description: >-
+      "systemextensionsctl reset" forcibly resets the System Extensions subsystem, removing every installed
+      system extension and clearing the associated state rather than targeting one bundle. Where uninstall
+      needs the operator to know which team and bundle identifier belongs to the sensor, reset removes the
+      endpoint security agent, the network content filter, and any DriverKit extensions in one command. Like
+      uninstall it requires root and System Integrity Protection to be disabled. On a managed fleet this is
+      also destructive to legitimate functionality - MDM-deployed VPN and content filter extensions are
+      discarded along with the security tooling - so it is noisy in outcome even where it is quiet in
+      telemetry.
+    code: sudo systemextensionsctl reset
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags: []
+  - name: Enable developer mode to load an extension from an arbitrary path
+    description: >-
+      Normally the system verifies, before activating a system extension, that the extension lives in the
+      Contents/Library/SystemExtensions folder of its containing app and that the app itself is installed in
+      one of the system's Applications directories. Apple documents that "systemextensionsctl developer on"
+      removes that check - "the system doesn't check the location of your system extension prior to loading
+      it, so you can load it from anywhere in the file system." The man page adds that developer mode also
+      skips the version check the system performs when it examines a new extension against an already
+      installed one, which opens the door to staging an older, known-vulnerable build of a legitimately signed
+      extension. Developer mode requires root and System Integrity Protection to be disabled. Note that
+      developer mode does not defeat notarization on its own - it is disabling SIP that bypasses the
+      notarization check - so this subcommand is one step in a chain that begins with csrutil, not a
+      standalone way to load unsigned code.
+    code: sudo systemextensionsctl developer on
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags: []
+paths:
+  - /usr/bin/systemextensionsctl
+detections:
+  - name: "Process execution of /usr/bin/systemextensionsctl with the list subcommand from a non-administrative or scripted parent process, indicating security software discovery (T1518.001)"
+    url: N/A
+  - name: "Process execution of /usr/bin/systemextensionsctl with the uninstall or reset subcommand, which removes endpoint security extensions and should never occur outside vendor uninstall tooling"
+    url: N/A
+  - name: "Process execution of /usr/bin/systemextensionsctl with the developer subcommand and the on argument, which disables the extension location and version checks"
+    url: N/A
+  - name: "File integrity monitoring on /Library/SystemExtensions/db.plist, the on-disk database of installed system extensions and their states"
+    url: N/A
+  - name: "Endpoint Security clients alerting on their own extension transitioning to the 'terminated waiting for uninstall on reboot' state, or on loss of the ES client connection"
+    url: N/A
+  - name: "Sigma: System Integrity Protection (SIP) Disabled - the uninstall, reset, and developer subcommands all require SIP to be off, so csrutil disable is a reliable precursor signal"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_csrutil_disable.yml
+resources:
+  - name: "systemextensionsctl(8) man page"
+    url: https://keith.github.io/xcode-man-pages/systemextensionsctl.8.html
+  - name: "Apple: Installing System Extensions and Drivers"
+    url: https://developer.apple.com/documentation/systemextensions/installing-system-extensions-and-drivers
+  - name: "Apple: Debugging and Testing System Extensions (documents what developer mode disables)"
+    url: https://developer.apple.com/documentation/driverkit/debugging-and-testing-system-extensions
+  - name: "Der Flounder: Uninstalling macOS system extensions"
+    url: https://derflounder.wordpress.com/2020/09/01/uninstalling-macos-system-extensions/
+  - name: "Graham Pugh: How to script the uninstallation of macOS System Extensions"
+    url: https://grahamrpugh.com/2021/04/06/delete-system-extension-command-line.html
+  - name: "Apple Platform Deployment: System and kernel extensions in macOS"
+    url: https://support.apple.com/guide/deployment/system-and-kernel-extensions-in-macos-depa5fb8376f/web
+  - name: "Elastic: Mac system extensions for threat detection, Part 3"
+    url: https://www.elastic.co/blog/mac-system-extensions-for-threat-detection-part-3
+  - name: "MITRE ATT&CK T1518.001 Software Discovery: Security Software Discovery"
+    url: https://attack.mitre.org/techniques/T1518/001/
+  - name: "MITRE ATT&CK T1562.001 Impair Defenses: Disable or Modify Tools"
+    url: https://attack.mitre.org/techniques/T1562/001/
+acknowledgements:
+  - Rich Trouton (Der Flounder) for documenting the systemextensionsctl uninstall syntax and its SIP prerequisite
+  - Graham Pugh for documenting how to resolve an extension's team and bundle identifiers for removal
