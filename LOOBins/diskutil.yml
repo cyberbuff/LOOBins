@@ -11,7 +11,12 @@ full_description: >-
   confirmation prompt. That combination makes diskutil useful to an attacker at both ends of an intrusion - for
   storage reconnaissance early on, and for anti-forensics, recovery inhibition and destruction at the end. The
   utility also exposes mount options directly via -mountOptions, which diskarbitrationd passes verbatim to the
-  filesystem mount program; this was the basis of CVE-2023-42931.
+  filesystem mount program; this was the basis of CVE-2023-42931. Existing detection coverage for noowners mounts,
+  such as Elastic's TCC-bypass rule and Jamf Protect's AUE_MOUNT telemetry correlation, matches on mount_apfs, the
+  helper diskarbitrationd invokes to perform the mount - not on diskutil itself, since diskutil only requests the
+  mount and exits. A rule written against mount_apfs will not fire on the diskutil invocation that triggered it, so
+  detecting this technique from diskutil activity requires new coverage keyed on diskutil's own command-line
+  arguments rather than the downstream mount_apfs process.
 created: 2026-09-20
 example_use_cases:
   - name: List whole disks and partitions
@@ -175,17 +180,13 @@ example_use_cases:
 paths:
   - /usr/sbin/diskutil
 detections:
-  - name: "Elastic: TCC Bypass via Mounted APFS Snapshot Access - mounts of the Data volume with the noowners flag. The rule matches mount_apfs; diskutil -mountOptions reaches the same mount through diskarbitrationd, so an equivalent rule on diskutil is needed for that path."
-    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/defense_evasion_tcc_bypass_mounted_apfs_access.toml
-  - name: "Jamf Protect: AUE_MOUNT and AUE_UNMOUNT telemetry - correlate mount events with their mount flags and initiating process to catch volumes mounted with noowners or at non-standard mount points."
-    url: https://github.com/jamf/jamfprotect/blob/main/json_samples_and_schemas/telemetry/samples/AUE_MOUNT.json
-  - name: "Command Line Argument Detection: diskutil invoked with a destructive verb (secureErase, zeroDisk, randomDisk, eraseDisk, eraseVolume, reformat, apfs deleteVolume, apfs deleteVolumeGroup, apfs deleteContainer), particularly from a non-interactive parent or shortly after mass file modification."
+  - name: "Command-line detection: destructive verb invocation (secureErase, zeroDisk, eraseDisk, eraseVolume, reformat, apfs deleteVolume/deleteVolumeGroup/deleteContainer)"
     url: N/A
-  - name: "Command Line Argument Detection: diskutil mount invoked with -mountOptions containing noowners or nosuid, or with -mountPoint pointing outside /Volumes."
+  - name: "Command-line detection: mount with -mountOptions containing noowners or nosuid, or -mountPoint outside /Volumes"
     url: N/A
-  - name: "Command Line Argument Detection: diskutil apfs deleteSnapshot, correlated with tmutil deletelocalsnapshots, as an indicator of recovery inhibition preceding or following ransomware activity."
+  - name: "Command-line detection: apfs deleteSnapshot, correlated with tmutil deletelocalsnapshots"
     url: N/A
-  - name: "Command Line Argument Detection: diskutil apfs unlockVolume or apfs changePassphrase with a -passphrase, -oldPassphrase or -newPassphrase value present in the process argument list."
+  - name: "Command-line detection: apfs unlockVolume or changePassphrase with a passphrase value in argv"
     url: N/A
 resources:
   - name: "diskutil(8) manual page"
