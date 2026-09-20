@@ -1,0 +1,120 @@
+name: csreq
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Compile and decode macOS Code Signing Requirement blobs, including the blobs stored in the TCC database.
+full_description: >-
+  The csreq binary is Apple's command-line tool for manipulating Code Signing Requirement data. It reads one
+  requirement - from a file, from standard input, or as literal source text after an equals sign - compiles it into
+  the system's internal binary form, and either writes that binary form to a file (-b) or converts it back to
+  canonical source text (-t). The manual page states that the binary form it produces is the same form produced by
+  the SecRequirementCopyData API and is accepted as input to the Code Signing verification APIs. This matters to an
+  attacker because requirement blobs are not only embedded in signed code - they are also stored as data in the
+  operating system's own trust decisions. The access table in the Transparency, Consent and Control (TCC) database
+  has a csreq BLOB column holding a compiled requirement, and tccd checks a requesting process against that blob
+  before honoring the grant. An adversary who has obtained write access to a TCC database cannot simply insert a row
+  with the client path filled in; the row needs a valid compiled requirement, and csreq is the documented way to
+  compile one. In the other direction, csreq turns the opaque blobs in a stolen TCC database back into readable
+  requirement text, exposing which signing identity an attacker would have to satisfy to inherit each existing
+  grant.
+created: 2026-09-20
+example_use_cases:
+  - name: Compile a legitimate application's designated requirement into a binary blob
+    description: >-
+      The access table in the TCC database stores a compiled requirement in its csreq column, and tccd checks the
+      requesting process against it. To forge a working grant, an attacker needs that blob. codesign --display -r-
+      prints a target application's designated requirement as source text, and csreq -r- -b compiles it to the
+      binary form the column expects. The csreq step itself needs no privilege - it is purely a compilation.
+    code: codesign --display -r- /Applications/<TARGET_APP>.app 2>&1 | awk -F ' => ' '/designated/{print $2}' | csreq -r- -b /tmp/req.bin
+    tactics:
+      - Defense Evasion
+      - Privilege Escalation
+    tags: []
+  - name: Hex-dump a compiled requirement blob for insertion into TCC.db
+    description: >-
+      Once a designated requirement has been compiled to a binary blob, xxd hex-encodes it so it can be embedded in
+      a sqlite3 INSERT against the TCC database's csreq column. No privilege is needed for the encoding itself - the
+      privilege is needed for the write that follows: the per-user database at
+      ~/Library/Application Support/com.apple.TCC/TCC.db can only be written by a process holding Full Disk Access,
+      and the system database at /Library/Application Support/com.apple.TCC/TCC.db is protected by SIP and
+      additionally requires root and a SIP bypass.
+    code: xxd -p /tmp/req.bin | tr -d '\n'
+    tactics:
+      - Defense Evasion
+      - Privilege Escalation
+    tags: []
+  - name: Mint a permissive requirement that an attacker-controlled binary can satisfy
+    description: >-
+      A Code Signing Requirement does not have to constrain the signer. csreq's manual page documents compiling an
+      identifier-only requirement with the literal-source form of -r, and the requirement language permits it. A
+      requirement consisting of nothing but an identifier constraint is satisfied by any code that carries a
+      signature - including an ad-hoc one - claiming that identifier, because there is no anchor or certificate
+      clause to fail. An attacker forging a TCC row for their own tooling compiles such a requirement rather than
+      copying a real vendor's designated requirement, so the grant survives re-signing the payload.
+    code: csreq -r='identifier "<PAYLOAD_BUNDLE_ID>"' -b /tmp/req.bin
+    tactics:
+      - Defense Evasion
+      - Privilege Escalation
+    tags: []
+  - name: Hex-dump a permissive requirement blob for insertion into TCC.db
+    description: >-
+      Once the permissive identifier-only requirement has been compiled to a binary blob, xxd hex-encodes it for the
+      sqlite3 INSERT that writes it into the TCC database's csreq column. The same prerequisites as above apply to
+      that write - Full Disk Access for the user database, root plus a SIP bypass for the system database.
+    code: xxd -p /tmp/req.bin | tr -d '\n'
+    tactics:
+      - Defense Evasion
+      - Privilege Escalation
+    tags: []
+  - name: Decode csreq blobs from a dumped TCC database to build a target list
+    description: >-
+      CrowdStrike's Falcon OverWatch team observed LABYRINTH CHOLLIMA attempting to dump the TCC database, and noted
+      that an adversary would use the output to determine which applications are allowed to access which services
+      and any code-signing requirement data. The csreq column is stored as an opaque blob, so the dump on its own is
+      not readable. Piping the hex-decoded blob into csreq -r- -t renders it as canonical requirement text, which
+      names the bundle identifier, team identifier and certificate chain a process must present to inherit that
+      grant - turning the dump into a ranked list of applications worth hijacking or impersonating. Reading the
+      per-user database requires Full Disk Access.
+    code: sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "select hex(csreq) from access where client='<TARGET_BUNDLE_ID>';" | xxd -r -p | csreq -r- -t
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+  - name: Round-trip a compiled requirement blob before deploying it
+    description: >-
+      csreq compiles a requirement and then checks it, and the -t form converts the compiled blob back to the
+      system's own view of the requirement source. Given a path to a file holding a compiled requirement, csreq -r
+      <file> -t prints that text, so an attacker can confirm a forged blob decodes to the requirement they intended
+      before writing it into a TCC row - a malformed blob leaves a row that tccd will never match. The manual page
+      also documents recovering a requirement embedded at an offset inside a larger file by slicing the file and
+      piping it to csreq -r- -t, which reads the same data without the signed application ever being handed to
+      codesign.
+    code: csreq -r /tmp/<BLOB_FILE> -t
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/csreq
+detections:
+  - name: "Elastic Detection Rules: Potential Privacy Control Bypass via TCCDB Modification"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/defense_evasion_privacy_controls_tcc_database_modification.toml
+  - name: "Process Execution Detection: /usr/bin/csreq invoked with -b, which writes a compiled requirement blob to disk. Outside developer toolchains and MDM packaging workflows this is rare, and the output path is worth capturing."
+    url: N/A
+  - name: "Process Sequence Detection: codesign --display -r- piped into csreq, followed within a short window by sqlite3 against a com.apple.TCC/TCC.db path - the full TCC grant forgery chain."
+    url: N/A
+  - name: "File Integrity Monitoring: writes to /Library/Application Support/com.apple.TCC/TCC.db or ~/Library/Application Support/com.apple.TCC/TCC.db by any process other than tccd."
+    url: N/A
+resources:
+  - name: "csreq(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/csreq.1.html
+  - name: "Apple Code Signing Guide: Code Signing Requirement Language"
+    url: https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html
+  - name: "CrowdStrike 2023 Threat Hunting Report (LABYRINTH CHOLLIMA TCC database dumping and csreq harvesting, p.43)"
+    url: https://asiapacificdefencereporter.com/wp-content/uploads/2023/08/Final-CRWD-2023-Threat-Hunting-Report.pdf
+  - name: "How to modify TCC on macOS (codesign to csreq to sqlite3 pipeline)"
+    url: https://entonos.com/2023/06/23/how-to-modify-tcc-on-macos/
+  - name: "Understanding TCC (generating and interpreting csreq blobs for signed and unsigned binaries)"
+    url: https://www.angelystor.com/posts/macos_tcc/
+  - name: "macOS TCC - HackTricks"
+    url: https://hacktricks.wiki/en/macos-hardening/macos-security-and-privilege-escalation/macos-security-protections/macos-tcc/index.html
+acknowledgements:
+  - CrowdStrike Falcon OverWatch, for documenting LABYRINTH CHOLLIMA's TCC database dumping
