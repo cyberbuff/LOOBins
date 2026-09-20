@@ -1,0 +1,46 @@
+name: syspolicy_check
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Check whether a macOS app bundle would pass Gatekeeper and Apple notarization.
+full_description: syspolicy_check is a developer diagnostic tool introduced in macOS 14 (Sonoma). It reports whether an application bundle is ready for distribution outside the Mac App Store or for upload to the Apple notary service, consolidating checks that were previously split across the codesign, spctl, and stapler commands. Its distribution subcommand runs the same Gatekeeper, XProtect, and provisioning-profile checks macOS applies when deciding if an app can launch, and its notary-submission subcommand runs the same checks as Apple's notary service. An operator staging a signed payload can use it to answer locally, with Apple's own policy engine and without uploading the bundle to the notary service, whether a bundle will run on the target without a Gatekeeper block or pass Apple's automated notarization checks, before the payload is delivered to a victim or submitted to Apple. No published campaign is known to use this binary; the use cases below describe pre-flight tradecraft.
+created: 2026-09-20
+example_use_cases:
+  - name: Pre-flight a signed payload against Gatekeeper before delivery
+    description: The distribution subcommand runs the same Gatekeeper, XProtect, and provisioning-profile checks macOS performs when deciding whether an app can launch. An operator building a signed dropper can confirm locally that the bundle will execute on a target without a Gatekeeper block, rather than testing on a live victim and risking a blocked launch that burns the sample. The check runs as any user and needs only a bundle on disk.
+    code: syspolicy_check distribution /path/to/Payload.app --verbose
+    tactics:
+      - Resource Development
+      - Defense Evasion
+    tags:
+      - gatekeeper
+  - name: Confirm notarization readiness before submitting under an abused Developer ID
+    description: The notary-submission subcommand runs the same checks as Apple's notary service. Adversaries have notarized malware through fraudulently obtained or abused Developer ID accounts (documented with the Shlayer campaign in 2020). Running this check locally lets an operator validate that a payload will pass Apple's automated checks before uploading, reducing rejections that could draw scrutiny to the developer account being abused. It requires a Developer ID-signed bundle.
+    code: syspolicy_check notary-submission /path/to/Payload.app --json
+    tactics:
+      - Resource Development
+    tags: []
+  - name: Triage a bundle's signing, entitlement, and stapling failures offline in one call
+    description: With --verbose the tool names the specific code-signing, hardened-runtime, entitlement, and stapling problems that would cause a launch or notarization failure, combining output that would otherwise require separate codesign, spctl, and stapler invocations. An operator can iterate on a payload until it reports clean on a single host, without submitting the sample to Apple's notary service. --json makes the same output machine-readable for a packaging pipeline.
+    code: syspolicy_check distribution /path/to/Payload.app --verbose --json
+    tactics:
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/syspolicy_check
+detections:
+  - name: "Execution of /usr/bin/syspolicy_check on a host with no developer tooling, or by a non-interactive or non-developer parent process, is anomalous for a diagnostic build tool."
+    url: N/A
+  - name: "syspolicy_check invoked with the distribution or notary-submission subcommand against an app bundle staged in a temporary, download, or user-writable directory (e.g. /tmp, /var/folders, ~/Downloads)."
+    url: N/A
+resources:
+  - name: "Apple Developer Forums: Resolving Trusted Execution Problems (documents syspolicy_check usage)"
+    url: https://developer.apple.com/forums/thread/706442
+  - name: "syspolicy_check(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/syspolicy_check.1.html
+  - name: "macOS 14 Release Notes (syspolicy_check introduction)"
+    url: https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes
+  - name: "Objective-See: Apple approved malware (notarized Shlayer payloads)"
+    url: https://objective-see.org/blog/blog_0x4E.html
+  - name: "Red Canary: Gatekeeping in macOS"
+    url: https://redcanary.com/blog/threat-detection/gatekeeper/
+acknowledgements:
+  - Patrick Wardle (Objective-See, research on notarized macOS malware)
