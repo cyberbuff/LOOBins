@@ -1,0 +1,82 @@
+name: atq
+author: Hare Sudhan (@cyb3rbuff)
+short_description: List pending at jobs queued for later execution.
+full_description: >-
+  atq is one of three hard links (with at and atrm) to the macOS at scheduler front end; batch is a related but
+  separate binary. It reads the at spool and lists the invoking user's pending jobs; per at(1), when run as the
+  superuser it lists every user's jobs instead. Jobs are written to /var/at/jobs (reachable through the /usr/lib/cron symlink) by the at and batch
+  utilities, and atq reports each job's ID, scheduled time and queue letter. The at scheduler is attractive to an
+  attacker because on macOS its runner, atrun(8), is disabled by default and can be enabled through launchd, giving
+  a low-profile alternative to LaunchAgents and cron for time-based persistence. atq is the reconnaissance half of
+  that subsystem - it does not create or run jobs, but it confirms whether the spool is in use, what is queued and
+  when it will fire, and (as root) surveys scheduled at activity across every account on the host. Because atq
+  reads the spool directly, it lists queued jobs even when atrun itself has never been enabled.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the current user's queued at jobs
+    description: >-
+      Run with no arguments, atq lists every pending job for the invoking user across all queues, returning each
+      job's ID, scheduled execution time and queue letter. This confirms whether the at subsystem is being used on
+      the host and what payloads are scheduled to run, which is useful early reconnaissance for an attacker with
+      only user-level code execution. Because atq reads the /var/at/jobs spool directly, it reports queued jobs even
+      if the atrun(8) runner has not been enabled, so it also reveals dormant at-based persistence that will fire
+      the moment the scheduler is turned on.
+    code: atq
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Enumerate every user's queued jobs as the superuser
+    description: >-
+      When atq is executed by root it lists all users' pending jobs rather than only the caller's, a behaviour
+      documented in at(1). After privilege escalation this gives a single-command survey of at-based scheduled
+      activity across every account on the host - useful for locating another actor's or an administrator's
+      scheduled jobs, which can then be read from the spool or removed with atrm. It requires root.
+    code: atq
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Confirm an at-based persistence job was accepted
+    description: >-
+      After a payload is scheduled with the at utility, querying the default at queue with atq -q a reads back the
+      job's assigned ID and execution time and confirms it was written to the spool at /var/at/jobs. This is the
+      verification step of establishing time-based persistence through the at subsystem, an alternative to
+      LaunchAgents and cron whose runner (atrun) is disabled by default on macOS. It requires only user-level code
+      execution.
+    code: atq -q a
+    tactics:
+      - Discovery
+      - Persistence
+    tags: []
+  - name: Surface completed-but-not-purged jobs
+    description: >-
+      For atq, the -v option shows jobs that have completed but have not yet been deleted from the queue, in
+      contrast to the default view of only pending jobs. An operator can use this to confirm a one-shot payload
+      already executed, or to spot residual completed-job records left in the queue that should be cleaned up to
+      reduce forensic traces. It requires only user-level code execution.
+    code: atq -v
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+paths:
+  - /usr/bin/atq
+detections:
+  - name: "Endpoint Security process execution: alert on execution of /usr/bin/atq, which is anomalous on most endpoints and, when run as root, indicates system-wide enumeration of queued at jobs"
+    url: N/A
+  - name: "Correlate at-family execution with the scheduler being enabled: the com.apple.atrun.plist Disabled key flipping to false, or a launchctl load -w of /System/Library/LaunchDaemons/com.apple.atrun.plist"
+    url: N/A
+  - name: "File monitoring of the at spool /var/at/jobs (reachable via /usr/lib/cron/jobs) for new job files"
+    url: N/A
+resources:
+  - name: "atq(1) manual page (Xcode man pages mirror)"
+    url: https://keith.github.io/xcode-man-pages/atq.1.html
+  - name: "atrun(8) manual page (Xcode man pages mirror)"
+    url: https://keith.github.io/xcode-man-pages/atrun.8.html
+  - name: "MITRE ATT&CK T1053.002 - Scheduled Task/Job: At"
+    url: https://attack.mitre.org/techniques/T1053/002/
+  - name: "Atomic Red Team T1053.002 (At) atomic tests"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1053.002/T1053.002.md
+  - name: "The Art of Mac Malware (Patrick Wardle), Persistence chapter - documents the at subsystem as a macOS persistence mechanism"
+    url: https://taomm.org/PDFs/vol1/CH%200x02%20Persistence.pdf
