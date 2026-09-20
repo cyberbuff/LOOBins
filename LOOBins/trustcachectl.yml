@@ -1,0 +1,40 @@
+name: trustcachectl
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query whether a code directory hash is present in a loaded kernel trust cache.
+full_description: trustcachectl is a macOS command-line utility (Apple silicon era, introduced around 2022) that loads trust caches into the kernel and queries whether a given code directory hash (cd hash) is present in a loaded trust cache. A trust cache is the kernel's list of cd hashes that AppleMobileFileIntegrity (AMFI) treats as platform-trusted code, so membership determines whether a binary is granted platform trust at launch. The load subcommand is entitlement-gated - the shipping binary is only entitled to load the OTA update brain or global install assistant trust cache - so it is not a general primitive for trusting arbitrary code. The query subcommand is the attacker-relevant capability - it is a per-cd-hash yes/no oracle that lets an operator learn, without disabling SIP or AMFI, which binaries the kernel already trusts on a hardened system. This tells an operator the host's code-signing posture and which Apple-signed executables the kernel will accept at launch.
+created: 2026-09-20
+example_use_cases:
+  - name: Query whether a single cd hash is trusted by the kernel
+    description: The query subcommand asks the kernel whether the supplied 40-hex-character cd hash is present in any loaded trust cache. A cd hash that is present is granted platform trust by AMFI, so this acts as a yes/no oracle for whether the corresponding binary is treated as trusted platform code at launch. No special entitlement is documented for query (unlike load), making it a low-friction reconnaissance primitive on Apple silicon hosts.
+    code: trustcachectl query <CDHASH>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate which on-disk binaries the kernel platform-trusts
+    description: By deriving a binary's cd hash from disk with codesign (-d --verbose=4 prints a CDHash line) and passing it to trustcachectl query, an operator can map which executables are backed by a loaded trust cache. Scripted across a directory of system binaries this reveals which paths hold trust-cached platform code, helping an attacker pick living-off-the-land executables and gauge a locked-down system's signing posture without touching AMFI or SIP.
+    code: codesign -d --verbose=4 /usr/bin/<BINARY> 2>&1 | awk -F= '/^CDHash/{print $2}' | xargs trustcachectl query
+    tactics:
+      - Discovery
+    tags:
+      - codesign
+  - name: Confirm a relocated Apple-signed binary keeps its trust before staging it
+    description: Trust cache membership is keyed on the cd hash, not on the file's path or parent process, so an Apple-signed binary copied to an attacker-chosen location keeps the same cd hash and can still be granted platform trust by AMFI via the trust cache (subject to any launch constraints enforced on newer macOS). After copying such a binary to a new location, an attacker queries the copy's cd hash to confirm it is still trust-cached, selecting an execution path AMFI will not reject at launch.
+    code: codesign -d --verbose=4 /tmp/staged 2>&1 | awk -F= '/^CDHash/{print $2}' | xargs trustcachectl query
+    tactics:
+      - Defense Evasion
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/trustcachectl
+detections:
+  - name: "Command-line detection: execution of /usr/bin/trustcachectl, especially with the query or load subcommand, is rare on production endpoints and worth alerting on"
+    url: N/A
+  - name: "Endpoint Security process-exec monitoring (ES_EVENT_TYPE_NOTIFY_EXEC) for /usr/bin/trustcachectl launches, collected via eslogger or an EDR agent"
+    url: N/A
+resources:
+  - name: "trustcachectl(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/trustcachectl.1.html
+  - name: "Apple Platform Security: Trust caches"
+    url: https://support.apple.com/guide/security/trust-caches-sec7d38fbf97/web
+  - name: "macOS trust cache CDHash caching abuse (XM Cyber research, aggregated by Mallory) - background on why trust cache membership matters to attackers"
+    url: https://www.mallory.ai/stories/019ef9c1-6df2-7527-a8ae-b8a8f289893e
