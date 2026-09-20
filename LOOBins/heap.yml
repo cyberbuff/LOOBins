@@ -1,0 +1,107 @@
+name: heap
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Dump the contents of another process's heap allocations by object class.
+full_description: |
+  The heap binary ships with macOS as a developer memory-debugging tool. Its documented purpose is to
+  list every malloc-allocated buffer in a process's heap, grouping allocations by class name, type
+  (Objective-C, C++ or CFType) and binary image, and printing summary counts and sizes. Beyond the
+  summary, its -addresses mode prints the actual contents of matching allocations rather than only their
+  sizes and class names, and the target may be given as a pid, a full or partial executable name, or the
+  pathname of a ".memgraph" file produced by leaks or the Xcode Memory Graph Debugger. Because
+  application heaps routinely hold passwords, session tokens, API keys and decrypted data in plaintext,
+  heap gives an attacker a signed, Apple-provided way to read secrets out of a running process, or out of
+  a captured memory graph, without dropping a custom memory scraper or attaching a debugger. It is the
+  content-extraction companion to leaks (which serialises the heap to a memgraph) and vmmap (which maps
+  the regions): heap names the object classes and prints what is inside them. Reading a live process
+  requires acquiring its task port: a same-user target that lacks the hardened runtime or carries the
+  get-task-allow entitlement (for example a debug build) can be read without root, while most other
+  processes require root, and SIP-protected platform binaries cannot be read even as root. A ".memgraph"
+  file, by contrast, can be analysed offline on any machine with no access to the original target and no
+  special privileges.
+created: 2026-09-20
+example_use_cases:
+  - name: Dump the contents of a live process's string and data objects
+    description: >-
+      The -addresses option takes a regular expression matched against full class names and, unless
+      -noContent is passed, prints the contents of every matching allocation. Targeting the Foundation
+      and CoreFoundation string and data classes that commonly hold credentials surfaces plaintext
+      passwords, tokens and keys the application is keeping in memory, without writing a memgraph to disk.
+      The operator must be able to obtain the target's task port: this works without root only when the
+      target is the operator's own process and either lacks the hardened runtime or carries the
+      get-task-allow entitlement; otherwise root is required, and SIP-protected system processes cannot be
+      read at all.
+    code: heap -addresses '__NSCFString|NSData|CFData' <TARGET_PROCESS_NAME> 2>/dev/null | grep -iE 'password|token|bearer|api[_-]?key'
+    tactics:
+      - Credential Access
+      - Collection
+    tags: []
+  - name: Extract secrets from an exfiltrated memory graph file offline
+    description: >-
+      heap accepts the pathname of a ".memgraph" file (produced by leaks -outputGraph or the Xcode Memory
+      Graph Debugger) in place of a live pid or process name. An attacker who has captured a process
+      memory graph on a victim host can copy the file off the machine and print the contents of all its
+      allocations with -addresses on their own system, with no access to the original process, no task
+      port and no root. This moves the credential-recovery work off the victim host entirely.
+    code: heap -addresses all <TARGET>.memgraph | grep -iE 'password|token|secret|-----BEGIN'
+    tactics:
+      - Collection
+      - Credential Access
+    tags: []
+  - name: Enumerate a target's heap object classes to locate credential-bearing types
+    description: >-
+      Run without -addresses, heap prints an aggregated summary of every class on the heap with instance
+      counts and total sizes. The -sortBySize flag orders that summary by total allocation size, letting
+      an operator map what a target process holds in memory and pick the object classes worth extracting
+      (for example large string, data or dictionary buffers) before dumping their contents. This is the
+      reconnaissance step that precedes a targeted -addresses read, and requires the same task-port access
+      as any other live read.
+    code: heap -sortBySize <TARGET_PROCESS_NAME>
+    tactics:
+      - Discovery
+      - Collection
+    tags: []
+  - name: Diff a live heap against a baseline memgraph to isolate freshly allocated secrets
+    description: >-
+      The -diffFrom=<memgraph> option restricts the output to objects that are new since the specified
+      baseline memory graph. An operator who captures a memgraph before an action (for example before a
+      user logs in or unlocks a vault) can then diff the live process against that baseline to narrow the
+      output to just the objects allocated to hold the newly entered credential, cutting through the noise
+      of the full heap. The same task-port prerequisite applies to reading the live process.
+    code: heap -addresses all -diffFrom=<BASELINE>.memgraph <TARGET_PID>
+    tactics:
+      - Collection
+      - Credential Access
+    tags: []
+  - name: Dump raw malloc blocks within a size band from a non-Objective-C process
+    description: >-
+      Applications built on Chromium, Electron or other C/C++ stacks keep secrets in plain malloc blocks
+      that carry no Objective-C class name. The special pattern "malloc" matches these non-object
+      allocations, and an optional bracketed size specifier restricts the dump to a size range, so a
+      targeted band of heap buffers can be printed with their contents while skipping tiny and oversized
+      allocations. Combined with -sortBySize the blocks are printed largest first. The same task-port
+      access is required.
+    code: heap -addresses 'malloc[1k-64k]' -sortBySize <TARGET_PROCESS_NAME> | grep -iE 'password|token|cookie'
+    tactics:
+      - Credential Access
+      - Collection
+    tags: []
+paths:
+  - /usr/bin/heap
+detections:
+  - name: "Process execution: /usr/bin/heap invoked with -addresses against a pid or process name the invoking user does not own, or that names a browser, password manager or credential-handling daemon."
+    url: N/A
+  - name: "Command line argument: heap invoked against a .memgraph file path, or with the -diffFrom= argument, indicating extraction from a previously captured process memory graph."
+    url: N/A
+  - name: "Endpoint Security telemetry: task-port acquisition (task_for_pid) against sensitive processes by non-debugger binaries. The ES_EVENT_TYPE_NOTIFY_GET_TASK event exposes process, path, signing and UID context for correlation."
+    url: https://developer.apple.com/documentation/endpointsecurity/es_event_type_notify_get_task
+resources:
+  - name: "heap(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/heap.1.html
+  - name: "Apple Developer: Gathering information about memory use"
+    url: https://developer.apple.com/documentation/xcode/gathering-information-about-memory-use
+  - name: "macOS Memory Dumping (HackTricks)"
+    url: https://hacktricks.wiki/en/macos-hardening/macos-security-and-privilege-escalation/macos-files-folders-and-binaries/macos-memory-dumping.html
+  - name: "Broken isolation - draining your credentials from popular macOS password managers (Objective by the Sea v7, Wojciech Regula)"
+    url: https://objectivebythesea.org/v7/talks/OBTS_v7_wRegula.pdf
+  - name: "MITRE ATT&CK T1003: OS Credential Dumping"
+    url: https://attack.mitre.org/techniques/T1003/
