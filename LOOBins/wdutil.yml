@@ -1,0 +1,57 @@
+name: wdutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query and log the host's Wi-Fi environment using the built-in Wireless Diagnostics utility.
+full_description: wdutil is the command-line front end for the macOS Wireless Diagnostics application. It reports the current wireless state, dumps the in-memory Wi-Fi log buffer, produces a full diagnostic bundle, and toggles verbose logging for the DHCP, OpenDirectory, DNS, EAPOL, and Wi-Fi subsystems. It is the native successor to the removed Apple80211 "airport" utility that older macOS malware such as the OSX.GMERA scripts called for wireless survey. An attacker can use it to profile the wireless environment, stage historical Wi-Fi activity for collection, or turn off network logging without a third-party tool. On Sonoma (14) and later the MAC, SSID, and BSSID in "wdutil info" are "<redacted>" without Location Services permission.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the current wireless environment
+    description: The "info" subcommand, the built-in successor to the removed "airport -I", prints the full Wi-Fi Info view with no elevated privileges, including security/authentication mode, PHY mode, channel and band, RSSI and noise, transmit rate, country code, and interface state. On macOS Sonoma (14) and later the MAC, SSID, and BSSID are "<redacted>" without Location Services permission, which an ad-hoc script does not hold.
+    code: wdutil info
+    tactics:
+      - Discovery
+    tags:
+      - network
+  - name: Dump the Wi-Fi log buffer to a predictable path
+    description: The "dump" subcommand writes the in-memory Wi-Fi log buffer to /tmp/wifi-XXXXXX.log. That buffer records recent association events, scan activity, and interface state changes, so an attacker can trigger the dump and read the file from the predictable /tmp location to profile recent wireless activity.
+    code: wdutil dump
+    tactics:
+      - Collection
+      - Discovery
+    tags:
+      - logging
+  - name: Collect a full wireless diagnostic bundle for exfiltration
+    description: The "diagnose" subcommand runs the Wireless Diagnostics collection without its UI and writes a bundle to the chosen directory (default /var/tmp). The bundle holds system and network configuration, logs, and Wi-Fi capture data, which an attacker with root can generate in one command and stage for exfiltration. Requires root.
+    code: sudo wdutil diagnose -f <OUTPUT_DIR>
+    tactics:
+      - Collection
+    tags: []
+  - name: Enable verbose EAPOL and Wi-Fi logging to record authentication activity
+    description: The "log" subcommand turns on verbose logging for the EAPOL (802.1X) and Wi-Fi subsystems. Left enabled, it records enterprise Wi-Fi authentication exchanges and association events to the system log, which an attacker can later read to profile EAP method, identity, and timing. It captures metadata, not plaintext secrets. Requires root.
+    code: sudo wdutil log +eapol +wifi
+    tactics:
+      - Collection
+    tags:
+      - logging
+  - name: Disable network diagnostic logging to reduce telemetry
+    description: The same "log" subcommand can disable the DHCP, DNS, EAPOL, and Wi-Fi logging channels using the "-" prefix. An attacker with root can turn these channels off so that network-layer activity during or after an intrusion is not recorded. Requires root.
+    code: sudo wdutil log -dhcp -dns -eapol -wifi
+    tactics:
+      - Defense Evasion
+    tags:
+      - logging
+paths:
+  - /usr/bin/wdutil
+detections: []
+resources:
+  - name: "wdutil(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/wdutil.8.html
+  - name: "Objective-See: The Mac Malware of 2019 (OSX.GMERA.B Wi-Fi survey via airport, the removed predecessor of wdutil)"
+    url: https://objective-see.org/blog/blog_0x53.html
+  - name: "ESET: Mac cryptocurrency trading application rebranded, bundled with malware (OSX.GMERA reconnaissance script runs airport -s to list Wi-Fi networks)"
+    url: https://www.welivesecurity.com/2020/07/16/mac-cryptocurrency-trading-application-rebranded-bundled-malware/
+  - name: "wifi-unredactor: Wi-Fi (B)SSID redaction on the macOS CLI in Sonoma and later"
+    url: https://github.com/noperator/wifi-unredactor
+  - name: "wdutil for Troubleshooting Wi-Fi Issues on macOS"
+    url: https://netbeez.net/blog/wdutil-for-troubleshooting-wi-fi-issues-on-macos/
+acknowledgements:
+  - Patrick Wardle (Objective-See, OSX.GMERA analysis documenting airport-based Wi-Fi survey)
