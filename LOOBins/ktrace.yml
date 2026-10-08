@@ -1,0 +1,42 @@
+name: ktrace
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Configure, record, and print kernel trace (kdebug) events, including per-process activity.
+full_description: ktrace is the command-line front end for the XNU kdebug kernel tracing facility (it is unrelated to the legacy BSD ktrace of older macOS releases). It records scheduler, VM, filesystem, and system-call events, driving the same facility behind fs_usage and Instruments. Because kdebug observes activity across the system, an adversary with root can use ktrace as a native, install-nothing way to watch other processes, capture a broad system snapshot for offline review, or occupy the facility so other kdebug-based tools cannot use it. kdebug requires root, and on release (SIP-enabled) kernels, processes that cannot be attached to, including hardened and protected ones, are excluded from tracing.
+created: 2026-09-20
+example_use_cases:
+- name: Stream another process's kernel activity in real time
+  description: The trace subcommand prints kdebug events for a running process to stdout. -p restricts tracing to a target by pid or name, -S renders string-bearing tracepoint arguments as strings (surfacing paths), and -n adds thread names, giving a live view of an unprotected process's file and system-call activity. Requires root; on release kernels, processes that cannot be attached to (including hardened and protected ones) are excluded.
+  code: ktrace trace -S -n -p <TARGET_PROCESS>
+  tactics:
+  - Discovery
+  - Collection
+  tags: []
+- name: Capture a system snapshot with unified log content to a file
+  description: The dump subcommand writes a kdebug trace plus a stackshot to a file for later inspection with ktrace trace -R. --include-log-content embeds unified log content, and -T bounds the capture with a timeout. The file can be moved off the host and reviewed offline, exposing recent system state and log data that may contain sensitive strings. Requires root.
+  code: ktrace dump --include-log-content -T 30 /tmp/snapshot.ktrace
+  tactics:
+  - Collection
+  tags: []
+- name: Profile system-wide activity with syscall backtrace sampling
+  description: The artrace subcommand profiles the whole system and writes events to a file. The syscall-sampling group enabled with -e records backtraces on system calls, -t bounds the run, and -o sets the output path, building a broad picture of process and system-call activity across the host from one native tool. Requires root.
+  code: ktrace artrace -e syscall-sampling -t 60s -o /tmp/system.ktrace
+  tactics:
+  - Discovery
+  - Collection
+  tags: []
+- name: Hold the kdebug facility to impair kdebug-based monitoring tools
+  description: Once trace is initialized with the init subcommand it stays in use until the space is reclaimed with remove, which the man page notes prevents background diagnostic tools from using trace. Leaving the facility occupied blocks kdebug-based tools such as fs_usage, sample-based collectors, and Instruments, but not tooling built on the Endpoint Security framework, which does not depend on kdebug. Requires root.
+  code: ktrace init -n <N_EVENTS>
+  tactics:
+  - Defense Evasion
+  tags: []
+paths:
+- /usr/bin/ktrace
+detections: []
+resources:
+- name: ktrace(1) manual page
+  url: https://keith.github.io/xcode-man-pages/ktrace.1.html
+- name: ktrace(5) Darwin kernel trace file format
+  url: https://keith.github.io/xcode-man-pages/ktrace.5.html
+- name: pykdebugparser (parser for kdebug events and ktrace files)
+  url: https://github.com/matan1008/pykdebugparser
