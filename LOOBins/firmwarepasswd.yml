@@ -1,0 +1,85 @@
+name: firmwarepasswd
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Set, check, and remove the EFI firmware password on Intel Macs.
+full_description: >-
+  firmwarepasswd is Apple's command line tool for managing the EFI firmware password on Intel-based Macs. EFI enforces
+  the password before macOS loads and, once set, blocks recoveryOS, Single User Mode, booting an unauthorized volume, and
+  target disk mode. With root, an attacker inverts this control: setting a password the owner does not know is a lockout
+  and extortion primitive, and removing an existing password re-opens recoveryOS so a later boot can disable SIP. The man
+  page states the tool requires root. It applies to Intel hardware only; Apple silicon uses the LocalPolicy managed by
+  bputil instead. Several verbs (-setpasswd, -delete, -verify) prompt for the password interactively rather than taking it
+  as an argument; -check and -mode are non-interactive.
+created: 2026-09-20
+example_use_cases:
+  - name: Determine whether a firmware password is set
+    description: >-
+      The -check option displays whether a firmware password is set. It is non-interactive and requires root. An attacker
+      with a root foothold on an Intel Mac uses it to learn whether the boot surface is locked before attempting external
+      media or recoveryOS, and whether setting their own password would work as a lockout here.
+    code: firmwarepasswd -check
+    tactics:
+      - Discovery
+    tags: []
+  - name: Determine which firmware password mode is configured
+    description: >-
+      The -mode option displays the current mode if a password is set. It is non-interactive and requires root. "command"
+      mode prompts only when booting from a different volume; "full" mode prompts on every startup. An attacker checks this
+      after confirming a password is set to gauge the existing control and room to escalate it.
+    code: firmwarepasswd -mode
+    tactics:
+      - Discovery
+    tags: []
+  - name: Set a firmware password to lock the owner out of recovery and external boot
+    description: >-
+      The -setpasswd option adds a new firmware password or changes an existing one. A password the owner does not know
+      blocks recoveryOS, Single User Mode, booting an unauthorized volume, and target disk mode, so the owner loses Apple's
+      normal recovery paths. The option prompts for the value rather than taking it on the command line. Requires root,
+      Intel only. Because EFI enforces it, the lockout survives wiping the system volume.
+    code: firmwarepasswd -setpasswd
+    tactics:
+      - Impact
+    tags: []
+  - name: Force a firmware password prompt on every startup
+    description: >-
+      The -setmode option sets the mode to "command" or "full". "full" prompts for the password on every startup (Apple
+      marks it "not recommended"); the default "command" mode prompts only when booting a different volume. After setting a
+      password the owner does not know, escalating to full mode denies normal use of the machine at every boot. Requires
+      root; a password must already be set.
+    code: firmwarepasswd -setmode full
+    tactics:
+      - Impact
+    tags: []
+  - name: Disable firmware password reset to make the lockout unrecoverable
+    description: >-
+      The -disable-reset-capability option disables firmware password reset via unlockseed. Apple's documentation states
+      that with it disabled, a forgotten password can only be removed by replacing the logic board at the owner's cost.
+      Combined with a password the owner does not know, this converts a reversible lockout into a hardware-level one. A
+      corresponding -enable-reset-capability option exists, and -unlockseed generation requires the machine to be stable
+      with no pending restart. Requires root, Intel hardware.
+    code: firmwarepasswd -disable-reset-capability
+    tactics:
+      - Impact
+    tags: []
+  - name: Remove an existing firmware password to re-open the recovery boot path
+    description: >-
+      The -delete option prompts for the current password and, if correct, clears both the password and the mode. An
+      attacker who knows or recovered the password (for example from a management record or provisioning script) uses it
+      to strip the control, so a later boot into recoveryOS or external media is no longer blocked and SIP can be disabled.
+      -delete prompts for the password rather than accepting it on the command line, and requires root. The related -verify
+      option confirms a candidate password before this step.
+    code: firmwarepasswd -delete
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/sbin/firmwarepasswd
+detections:
+  - name: "Sigma: Suspicious MacOS Firmware Activity (firmwarepasswd with setpasswd/full/delete/check)"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_susp_macos_firmware_activity.yml
+resources:
+  - name: "Apple Platform Security: Firmware password protection in an Intel-based Mac"
+    url: https://support.apple.com/guide/security/firmware-password-protection-sec28382c9ca/web
+  - name: "firmwarepasswd(8) manual page"
+    url: https://www.manpagez.com/man/8/firmwarepasswd/
+  - name: "NIST macOS Security: os_firmware_password_require hardening rule"
+    url: https://github.com/usnistgov/macos_security/blob/932a51f3e819dd3e02ebfcf3ef433cfffafbe28b/rules/os/os_firmware_password_require.yaml
