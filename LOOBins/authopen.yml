@@ -1,0 +1,44 @@
+name: authopen
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read, create, or overwrite files as root through an authorization-gated setuid helper.
+full_description: authopen is a setuid-root helper at /usr/libexec/authopen. Given a path it requests a sys.openfile.[readonly|readwrite|readwritecreate].<path> right from the system security daemon; if granted, it opens the file as root and writes it to stdout or, with -w, copies stdin into it. On a stock system these rights require administrator authentication through a native dialog, so it is not a silent privilege escalation. Its value is being an Apple-signed binary on every macOS install. An operator holding an admin session, or able to satisfy a loosened authorization rule pushed via MDM or an authorizationdb change, turns one prompt into an arbitrary root-owned file read or write without a custom setuid helper.
+created: 2026-09-20
+example_use_cases:
+  - name: Read a root-only file to stdout
+    description: With a sys.openfile.readonly right for the path, authopen writes the file to stdout, reading a root-only file without a root shell. On a stock system the right requires authenticating as an administrator at the authorization dialog.
+    code: /usr/libexec/authopen /etc/krb5.keytab
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Write a root-owned LaunchDaemon for persistence
+    description: -c creates the file if absent, -m sets its mode (requires -c), and -w writes stdin into it. Piping a property list under /Library/LaunchDaemons creates a root-owned LaunchDaemon that launchd runs as root at boot. The sys.openfile.readwritecreate right prompts for administrator authentication.
+    code: cat payload.plist | /usr/libexec/authopen -c -w -m 644 /Library/LaunchDaemons/<LABEL>.plist
+    tactics:
+      - Persistence
+      - Privilege Escalation
+    tags: []
+  - name: Drop a passwordless sudoers rule
+    description: authopen -c -w -m creates a new root-owned file from stdin. A NOPASSWD rule under /etc/sudoers.d grants a controlled account passwordless sudo. sudo only honors drop-in files owned by root with mode 0440, which authopen produces because it writes as root. The sys.openfile.readwritecreate right prompts for administrator authentication.
+    code: "echo '<USER> ALL=(ALL) NOPASSWD: ALL' | /usr/libexec/authopen -c -w -m 440 /etc/sudoers.d/<NAME>"
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags: []
+  - name: Append to a global shell startup file for root execution
+    description: -a appends instead of truncating, which -w does by default. A command appended to /etc/zshrc, the system-wide zsh startup file every interactive zsh session reads, runs when any shell starts, including as root when an administrator opens a root shell. The sys.openfile.readwrite right prompts for administrator authentication.
+    code: echo '<COMMAND>' | /usr/libexec/authopen -a -w /etc/zshrc
+    tactics:
+      - Persistence
+      - Privilege Escalation
+    tags: []
+paths:
+  - /usr/libexec/authopen
+detections: []
+resources:
+  - name: "Apple Secure Coding Guide - Elevating Privileges Safely (documents authopen)"
+    url: https://developer.apple.com/library/archive/documentation/Security/Conceptual/SecureCodingGuide/Articles/AccessControl.html
+  - name: "authopen(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/authopen.1.html
+  - name: "MITRE ATT&CK T1548 - Abuse Elevation Control Mechanism"
+    url: https://attack.mitre.org/techniques/T1548/
