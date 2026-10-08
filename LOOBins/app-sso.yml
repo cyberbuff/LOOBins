@@ -1,0 +1,54 @@
+name: app-sso
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Enumerate Kerberos and Platform SSO realm configuration and force a native credential prompt.
+full_description: app-sso is the command-line controller for the macOS Kerberos Single Sign-on (SSO) extension and Platform SSO. On a Mac enrolled through MDM with an Extensible SSO profile, the Kerberos extension authenticates to an Active Directory realm and Platform SSO binds the device to an identity provider like Microsoft Entra ID. Without elevation, app-sso reads the invoking user's realm and Platform SSO configuration. As a signed Apple binary on every install, it lets an attacker with code execution map the joined Active Directory environment before moving laterally. Its authenticate command also shows the extension's own login dialog, a native credential prompt the attacker need not build, to coerce a user into re-entering their directory password.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate configured Kerberos SSO realms
+    description: The --listrealms command prints every Kerberos realm the SSO extension is configured for, revealing on an MDM-enrolled host whether the Mac is joined to Active Directory and the exact realm name. It reads the invoking user's configuration and needs no elevation.
+    code: app-sso -l
+    tactics:
+      - Discovery
+    tags: []
+  - name: Read realm configuration, site code and password expiry
+    description: The --realminfo command prints a configured realm's Active Directory site code, network home directory path and password expiry date, with --json formatting the output for parsing. The site code maps the directory topology and the expiry date helps time a credential-coercion attempt, read without elevation.
+    code: app-sso -i <REALM> --json
+    tactics:
+      - Discovery
+    tags: []
+  - name: Dump the Kerberos settings shared with other processes
+    description: The --sharedsettings command prints the Kerberos settings the SSO extension shares with other processes for a given realm. Marked diagnostic-only in the man page, it exposes the account state and directory settings other software relies on, read without elevation.
+    code: app-sso -t <REALM>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Perform an Active Directory site lookup
+    description: The --sitecode command performs a site lookup for the specified realm, and --verbose also prints the complete site code cache. The cache maps the realm to its Active Directory sites, revealing the directory's physical topology and the domain controllers the host resolves, read without elevation.
+    code: app-sso -s <REALM> -v
+    tactics:
+      - Discovery
+    tags: []
+  - name: Force the extension login dialog to harvest directory credentials
+    description: The --authenticate command displays the Kerberos SSO extension's login dialog, --force shows it even when a valid credential already exists, and --username pins the account. This native macOS prompt, which the attacker need not build, coerces the user into re-entering their Active Directory password. It requires a Mac already configured with the extension through MDM enrollment.
+    code: app-sso -a <REALM> -u <TARGET_USER> -f
+    tactics:
+      - Credential Access
+    tags: []
+  - name: Disclose Platform SSO device, login and token state
+    description: In Platform SSO mode the --state command displays the current state, including device, login and user configuration and SSO token status with received and expiration dates. On an Entra ID enrolled Mac this reveals whether the device holds a live SSO token and when it expires, without elevation.
+    code: app-sso platform -s
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/app-sso
+detections: []
+resources:
+  - name: "app-sso man page (Xcode man pages)"
+    url: https://keith.github.io/xcode-man-pages/app-sso.1.html
+  - name: "Apple: Use the Kerberos SSO extension to deploy Kerberos"
+    url: https://support.apple.com/guide/deployment/kerberos-sso-extension-depe6a1cda64/web
+  - name: "Microsoft: macOS Platform Single Sign-on (PSSO) overview"
+    url: https://learn.microsoft.com/en-us/entra/identity/devices/macos-psso
+  - name: "MITRE ATT&CK T1558 Steal or Forge Kerberos Tickets"
+    url: https://attack.mitre.org/techniques/T1558/
