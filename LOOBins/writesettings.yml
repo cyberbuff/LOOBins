@@ -1,0 +1,54 @@
+name: writesettings
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Write the legacy Screen Sharing / Apple Remote Desktop VNC password file directly, without invoking kickstart.
+full_description: |
+  writesettings is a zsh script inside the Apple VNC server bundle at
+  /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/Support/writesettings. It reads the
+  VNCSETTINGS environment variable, writes its value verbatim to /Library/Preferences/com.apple.VNCSettings.txt, and
+  sets that file to mode 400, owner root:wheel. It takes no flags (the payload comes from the environment) and exits
+  unless it runs as root (EUID 0) with VNCSETTINGS non-empty. The file holds the legacy VNC ("Screen Sharing")
+  password, truncated to 8 characters and XORed with the fixed, publicly known key 1734516E8BA8C5E2FF1C39567390ADCA, so
+  its value is reversible by anyone who can read it. Apple's supported way to set it is kickstart -setvncpw;
+  writesettings plants or overwrites the file without running kickstart, and the secret never reaches argv. It only
+  writes the file: Screen Sharing / VNC must already be enabled for the credential to work over TCP 5900.
+created: 2026-09-20
+example_use_cases:
+  - name: Plant the legacy VNC password file without running kickstart
+    description: |
+      Run as root with VNCSETTINGS set to the obfuscated password, writesettings creates
+      /Library/Preferences/com.apple.VNCSettings.txt (mode 400, owner root:wheel) with that value. The on-disk result
+      matches kickstart -setvncpw, but kickstart is never invoked and the secret never appears in argv. Requires root,
+      and the Screen Sharing / VNC server must already be enabled for the credential to grant access.
+    code: |
+      sudo VNCSETTINGS='<XOR_ENCODED_VNC_PASSWORD>' /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/Support/writesettings
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Overwrite an existing VNC password to hijack a running Screen Sharing service
+    description: |
+      writesettings unconditionally overwrites /Library/Preferences/com.apple.VNCSettings.txt each time it runs. On a
+      host where Screen Sharing or legacy VNC is already in use, an attacker with root can replace the administrator's
+      stored password with their own without enabling a new service, loading a LaunchDaemon, or running kickstart. The
+      service keeps listening on TCP 5900, now with a password the attacker controls. Requires root and an
+      already-enabled service.
+    code: |
+      sudo VNCSETTINGS='<XOR_ENCODED_ATTACKER_PASSWORD>' /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/Support/writesettings
+    tactics:
+      - Lateral Movement
+      - Defense Evasion
+    tags: []
+paths:
+  - /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/Support/writesettings
+detections: []
+resources:
+  - name: "MacOS Red Teaming 206: ARD (Apple Remote Desktop Protocol) - LockBoxx"
+    url: https://blog.lockboxx.org/2019/07/macos-red-teaming-206-ard-apple-remote.html
+  - name: "Living off the Orchard: Leveraging Apple Remote Desktop for Good and Evil - Mandiant"
+    url: https://cloud.google.com/blog/topics/threat-intelligence/leveraging-apple-remote-desktop-for-good-and-evil
+  - name: "MITRE ATT&CK T1021.005 - Remote Services: VNC"
+    url: https://attack.mitre.org/techniques/T1021/005/
+  - name: "Set up a computer running VNC software for Remote Desktop - Apple Support"
+    url: https://support.apple.com/guide/remote-desktop/set-up-a-computer-running-vnc-software-apdbed09830/mac
+acknowledgements:
+  - Dan Borges (LockBoxx) for the ARD red teaming research covering legacy VNC password weaknesses and Screen Sharing tradecraft
