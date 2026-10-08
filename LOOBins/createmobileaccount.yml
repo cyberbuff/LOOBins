@@ -1,0 +1,64 @@
+name: createmobileaccount
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Create a local, login-capable account non-interactively as root, optionally granting it a SecureToken for FileVault.
+full_description: >-
+  createmobileaccount is an undocumented tool inside ManagedClient.app used by the macOS directory and MDM machinery
+  to create mobile accounts: local, login-capable records caching an Active Directory or Open Directory identity for
+  offline use. It is not in PATH, has no man page, and runs by absolute path as root. It takes a user record (-n)
+  and a password (-p, or interactive -P), plus an optional SecureToken administrator (-a / -U) that on an encrypted
+  APFS volume lets the account unlock FileVault; -D declines the SecureToken step so it runs unattended. With root it
+  adds a persistent local account, and -a / -U yields one that unlocks FileVault at boot.
+created: 2026-09-20
+example_use_cases:
+  - name: Create a persistent local account off the monitored account-creation path
+    description: >-
+      Run as root, -n with -p creates a login-capable local account in a single non-interactive command, a foothold
+      that survives reboots. Unlike sysadminctl -addUser or dscl -create, it is an undocumented binary outside PATH
+      called by absolute path.
+    code: /System/Library/CoreServices/ManagedClient.app/Contents/Resources/createmobileaccount -n <NEW_USER> -p <PASSWORD>
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Control SecureToken grant for the new account
+    description: >-
+      On an encrypted APFS volume a CLI-created account cannot authenticate at the FileVault login window without a
+      SecureToken. Passing an existing SecureToken administrator with -a and -U grants the new account a SecureToken,
+      making it a volume owner that unlocks FileVault at boot; the -U admin password is on the command line.
+      Alternatively, -D declines the SecureToken step entirely, suppressing the interactive dialog that since macOS
+      10.13.4 blocks the command on a host with no console session, so it completes fully unattended over SSH or
+      from a management agent, leaving an account with no SecureToken.
+    code: /System/Library/CoreServices/ManagedClient.app/Contents/Resources/createmobileaccount -n <NEW_USER> -p <PASSWORD> -a <ADMIN_USER> -U <ADMIN_PASSWORD>
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Keep the account password out of the process argument list
+    description: >-
+      A password supplied with -p (or an admin password with -U) appears in the process argument list. Using -P
+      prompts for it on the terminal instead, so the secret never enters argv or shell history; adding -D also avoids
+      the SecureToken prompt. This requires root and an interactive TTY.
+    code: /System/Library/CoreServices/ManagedClient.app/Contents/Resources/createmobileaccount -n <NEW_USER> -P -D
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /System/Library/CoreServices/ManagedClient.app/Contents/Resources/createmobileaccount
+detections: []
+resources:
+  - name: "MITRE ATT&CK T1136.001 Create Account: Local Account"
+    url: https://attack.mitre.org/techniques/T1136/001/
+  - name: "Apple Platform Deployment: Use secure token, bootstrap token, and volume ownership in deployments"
+    url: https://support.apple.com/guide/deployment/use-secure-and-bootstrap-tokens-dep24dbdcf9e/web
+  - name: "Der Flounder: Creating AD or OD mobile users from the command line"
+    url: https://derflounder.wordpress.com/2011/08/12/creating-ad-or-od-mobile-users-from-the-command-line/
+  - name: "Der Flounder: Secure Token and FileVault on Apple File System"
+    url: https://derflounder.wordpress.com/2018/01/20/secure-token-and-filevault-on-apple-file-system/
+  - name: "osxadmin: createmobileaccount usage and binary path"
+    url: http://osxadmin.blogspot.com/2009/06/createmobileaccount.html
+  - name: "jamf-scripts (theadamcraig): remote_AD_user_creation.sh - createmobileaccount -a/-U to pass a SecureToken admin"
+    url: https://github.com/theadamcraig/jamf-scripts/blob/master/remote_AD_user_creation.sh
+  - name: "Jamf Nation: Unable to enable SecureToken - createmobileaccount -n <user> -D to suppress the SecureToken prompt"
+    url: https://community.jamf.com/general-discussions-2/unable-to-enable-securetoken-10648
+  - name: "Sound Mac Guy: Bypassing the SecureToken dialog for mobile accounts (interactive dialog since macOS 10.13.4)"
+    url: https://soundmacguy.wordpress.com/2018/06/02/bypassing-the-securetoken-dialog-for-mobile-accounts/
