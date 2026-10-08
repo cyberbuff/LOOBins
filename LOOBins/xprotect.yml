@@ -1,0 +1,54 @@
+name: xprotect
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query the version, status, and logs of macOS XProtect anti-malware from the command line.
+full_description: >-
+  xprotect is a signed Apple command-line utility, introduced in macOS 15 (Sequoia), for
+  interacting with XProtect, the operating system's built-in signature-based anti-malware
+  subsystem. Its subcommands print the installed signature-asset version, print the update
+  version available online in iCloud, display XProtect logs, report its status, and install
+  signature updates. For an attacker with code execution, it is a pre-installed, Apple-signed
+  way to profile the host's defensive posture before running a payload: the installed
+  signature bundle (and so whether a given malware family is likely detected), whether the
+  subsystem works, whether a newer signature set is pending, and whether XProtect has already
+  acted on anything. It cannot disable XProtect, so it supports reconnaissance only.
+created: 2026-09-20
+example_use_cases:
+  - name: Profile the installed XProtect signature version and subsystem status
+    description: >-
+      The version subcommand prints the currently installed XProtect signature-asset version, revealing
+      which signature bundle the host carries so an attacker can estimate whether their malware family is
+      likely flagged. The status subcommand confirms the subsystem is present and running. Together they
+      show whether the host's defenses are current and active; an impaired subsystem or stale signature set
+      carries less risk of a signature hit. Both are passive reads that do not alter XProtect, and the
+      --json flag returns machine-parsable output.
+    code: xprotect version --json
+    tactics:
+      - Discovery
+    tags: []
+  - name: Examine XProtect activity logs and check for pending signature updates
+    description: >-
+      The logs subcommand displays XProtect's log activity via an XProtect-scoped log show query, showing
+      whether XProtect or XProtect Remediator has already acted on files, including the attacker's own
+      tooling. The check subcommand prints the update version available online in iCloud; comparing it
+      against the installed version shows whether a newer signature set, possibly one covering the
+      attacker's tooling, is pending. check reaches out to Apple's update endpoint and typically runs
+      elevated. The --json flag returns machine-parsable output from check.
+    code: xprotect logs
+    tactics:
+      - Discovery
+    tags:
+      - logging
+paths:
+  - /usr/bin/xprotect
+detections: []
+resources:
+  - name: "xprotect(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/xprotect.1.html
+  - name: "Using the xprotect command in macOS 15 (Fraser Hess)"
+    url: https://macadmin.fraserhess.com/2024/09/16/using-the-xprotect-command-in-macos-15/
+  - name: "All Eyes on XProtect (Remediator) - Objective-See"
+    url: https://objective-see.org/blog/blog_0x5F.html
+  - name: "macOS info-stealers quickly evolve to evade XProtect detection - BleepingComputer"
+    url: https://www.bleepingcomputer.com/news/security/macos-info-stealers-quickly-evolve-to-evade-xprotect-detection/
+  - name: "Apple Platform Security: Protecting against malware in macOS"
+    url: https://support.apple.com/guide/security/protecting-against-malware-sec469d47bd8/web
