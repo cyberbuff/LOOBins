@@ -1,0 +1,64 @@
+name: dsmemberutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query the macOS membership APIs to resolve effective group membership, UIDs, UUIDs, and SIDs.
+full_description: >-
+  dsmemberutil is a command-line front end to the macOS membership API. It answers identity and group
+  membership the way the kernel resolves it at access-check time rather than by reading flat files: it
+  checks whether a user belongs to a group (including nested and directory-provided groups),
+  converts between UIDs/GIDs, UUIDs, and Windows SIDs, and flushes the local membership cache. It is
+  unprivileged and present on every macOS install, so an adversary can use it for fast privilege triage.
+  One command reveals whether an account is a local administrator, and on Active Directory-bound hosts it
+  correlates macOS UIDs with AD SIDs.
+created: 2026-09-20
+example_use_cases:
+  - name: Determine whether an account is a local administrator
+    description: >-
+      checkmembership resolves effective membership against the membership API, so a single call answers
+      whether an account holds administrator rights. Membership in the "admin" group (GID 80) grants sudo
+      and administrative rights on macOS. The command accepts either a username with -U and group name with
+      -G, or numeric UID with -u and GID with -g. It queries the membership API rather than parsing
+      /etc/group, so it reflects the membership the kernel enforces, including memberships granted through
+      nested groups or a bound directory. It runs as any user with no privileges, a quick way to pick
+      escalation targets.
+    code: dsmemberutil checkmembership -U <USERNAME> -G admin
+    tactics:
+      - Discovery
+    tags:
+      - groups
+  - name: Resolve identifiers between UID, UUID, and Active Directory SID
+    description: >-
+      The getuuid, getid, and getsid subcommands convert between the identifier types macOS uses
+      internally. getuuid maps a UID to its UUID, getid reverses a UUID back to a UID or GID, and getsid
+      returns the Windows SID for a user or group. macOS file ACLs and directory records key on UUIDs rather
+      than numeric IDs, so these conversions correlate accounts with ACL entries and directory objects during
+      enumeration. On a host bound to Active Directory, getsid maps a macOS identity to its domain SID,
+      enabling a pivot toward specific domain targets from a compromised Mac. No privileges are required for
+      any of these subcommands.
+    code: dsmemberutil getuuid -u <UID>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Flush the membership cache to force new group rights to apply
+    description: >-
+      flushcache clears the local membership cache. After an attacker with sufficient rights modifies
+      group membership (for example, adding an account to the admin group via dscl or dseditgroup), the
+      kernel may keep enforcing the cached membership until the cache expires, a reboot, or a re-login.
+      Flushing forces the new membership to re-resolve immediately so the granted rights take effect. It
+      affects only caching; the group change itself is a separate, privileged step.
+    code: dsmemberutil flushcache
+    tactics:
+      - Privilege Escalation
+    tags:
+      - groups
+paths:
+  - /usr/bin/dsmemberutil
+detections:
+  - name: "Elastic: Enumeration of Users or Groups via Built-in Commands (process.name is dsmemberutil)"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/discovery_users_domain_built_in_commands.toml
+resources:
+  - name: "dsmemberutil(1) man page (keith.github.io mirror)"
+    url: https://keith.github.io/xcode-man-pages/dsmemberutil.1.html
+  - name: "dsmemberutil - View user and group rights in macOS (ss64)"
+    url: https://ss64.com/mac/dsmemberutil.html
+  - name: "Elastic Security: Enumeration of Users or Groups via Built-in Commands"
+    url: https://www.elastic.co/guide/en/security/current/enumeration-of-users-or-groups-via-built-in-commands.html
