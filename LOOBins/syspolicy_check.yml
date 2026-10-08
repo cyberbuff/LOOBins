@@ -1,0 +1,42 @@
+name: syspolicy_check
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Check whether a macOS app bundle would pass Gatekeeper and Apple notarization.
+full_description: syspolicy_check is a developer diagnostic tool introduced in macOS 14 (Sonoma) that reports whether an application bundle is ready for distribution outside the Mac App Store or for upload to Apple's notary service, consolidating checks previously split across codesign, spctl, and stapler. The distribution subcommand runs the Gatekeeper, XProtect, and provisioning-profile checks macOS applies when deciding if an app can launch; the notary-submission subcommand runs Apple's notary-service checks. An operator staging a signed payload can confirm locally that a bundle will run without a Gatekeeper block or pass notarization before delivering it to a victim or submitting it to Apple. No published campaign is known to use this binary.
+created: 2026-09-20
+example_use_cases:
+  - name: Pre-flight a signed payload against Gatekeeper before delivery
+    description: An operator can run the distribution subcommand to confirm a signed dropper will clear Gatekeeper on a target, rather than risking a blocked launch that burns the sample on a live victim. It runs as any user and needs only a bundle on disk.
+    code: syspolicy_check distribution /path/to/Payload.app --verbose
+    tactics:
+      - Resource Development
+      - Defense Evasion
+    tags:
+      - gatekeeper
+  - name: Confirm notarization readiness before submitting under an abused Developer ID
+    description: The notary-submission subcommand runs Apple's notary-service checks. Adversaries have notarized malware through fraudulently obtained or abused Developer ID accounts (documented with the Shlayer campaign in 2020). Running it locally confirms a Developer ID-signed payload will pass before uploading, reducing rejections against the abused account.
+    code: syspolicy_check notary-submission /path/to/Payload.app --json
+    tactics:
+      - Resource Development
+    tags: []
+  - name: Triage a bundle's signing, entitlement, and stapling failures offline in one call
+    description: With --verbose the tool names the code-signing, hardened-runtime, entitlement, and stapling problems that would cause a launch or notarization failure, replacing separate codesign, spctl, and stapler runs. An operator can iterate until a payload reports clean without submitting the sample to Apple; --json makes the output machine-readable for a packaging pipeline.
+    code: syspolicy_check distribution /path/to/Payload.app --verbose --json
+    tactics:
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/syspolicy_check
+detections: []
+resources:
+  - name: "Apple Developer Forums: Resolving Trusted Execution Problems (documents syspolicy_check usage)"
+    url: https://developer.apple.com/forums/thread/706442
+  - name: "syspolicy_check(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/syspolicy_check.1.html
+  - name: "macOS 14 Release Notes (syspolicy_check introduction)"
+    url: https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes
+  - name: "Objective-See: Apple approved malware (notarized Shlayer payloads)"
+    url: https://objective-see.org/blog/blog_0x4E.html
+  - name: "Red Canary: Gatekeeping in macOS"
+    url: https://redcanary.com/blog/threat-detection/gatekeeper/
+acknowledgements:
+  - Patrick Wardle (Objective-See, research on notarized macOS malware)
