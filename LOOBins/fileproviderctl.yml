@@ -1,0 +1,35 @@
+name: fileproviderctl
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Introspect and control the File Provider daemon that backs macOS cloud-sync clients.
+full_description: "The fileproviderctl binary controls the fileproviderd daemon and enumerates and manipulates files exposed through File Provider extensions. On modern macOS, every third-party cloud-sync client (Dropbox, OneDrive, Google Drive, Box) and iCloud Drive registers a File Provider domain, whose items can be dataless placeholders that hold metadata but no local contents. The binary reads and acts on this subsystem from the logged-in user's session with no elevation, which makes it useful to an attacker running as the user. Its dump command reveals which cloud services the victim syncs, enumerate lists a domain's items including cloud-only placeholders, and materialize forces a placeholder's contents onto disk. Together they inventory and pull down cloud-stored data without opening the sync applications."
+created: 2026-09-20
+example_use_cases:
+  - name: Discover configured cloud storage providers via the subsystem dump
+    description: The dump command prints the state of the File Provider subsystem, the sync engine, and all providers. The output names the cloud-sync services registered as provider domains (for example Dropbox, OneDrive, Google Drive, Box, or iCloud Drive) with their provider identifiers, showing an attacker where the victim's cloud data lives. It runs as the logged-in user with no elevation.
+    code: fileproviderctl dump
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate items in a cloud provider domain including placeholders
+    description: The enumerate command (alias ls) runs an interactive enumeration of the provider named by a partial identifier from the dump output. It lists the domain's items, including dataless placeholders whose contents are not on disk, inventorying cloud-stored filenames and structure without downloading the data or opening the sync client.
+    code: fileproviderctl enumerate <PROVIDER_ID>
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Materialize a cloud-only placeholder file to disk for collection
+    description: The materialize command writes the specified item to disk and lists the resulting contents, forcing a dataless placeholder's cloud-backed data to download. Combined with item paths from enumerate, an attacker can pull cloud-stored files that were never local and stage them for exfiltration without opening the sync application. It takes a file URL, path, or bookmark and runs as the logged-in user with no elevation.
+    code: fileproviderctl materialize <FILE_PATH>
+    tactics:
+      - Collection
+    tags: []
+paths:
+  - /usr/bin/fileproviderctl
+detections: []
+resources:
+  - name: "fileproviderctl(1) manual page"
+    url: "https://keith.github.io/xcode-man-pages/fileproviderctl.1.html"
+  - name: "Apple Developer: File Provider framework"
+    url: "https://developer.apple.com/documentation/fileprovider"
+  - name: "iCloud Drive in Sonoma: FileProvider and eviction (The Eclectic Light Company)"
+    url: "https://eclecticlight.co/2023/11/21/icloud-drive-in-sonoma-fileprovider-and-eviction/"
