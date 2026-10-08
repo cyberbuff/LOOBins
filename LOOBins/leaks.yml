@@ -1,0 +1,70 @@
+name: leaks
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read another process's heap memory and export it as a portable memory graph.
+full_description: |
+  The leaks binary ships with macOS as a developer tool for finding unreferenced malloc buffers. It
+  does so by reading the target's entire heap and, for a live process, printing allocation contents by
+  default, making it a signed, Apple-provided way to scrape the plaintext passwords, tokens, API keys
+  and decrypted data held there. With -outputGraph it instead serialises the full memory state to a
+  ".memgraph" file that can be copied off the host and mined offline. Reading a process requires its
+  task port: a same-user target lacking the hardened runtime or carrying get-task-allow (such as a debug
+  build) needs no root, others require root, and SIP-protected binaries cannot be read.
+created: 2026-09-20
+example_use_cases:
+  - name: Scrape secrets from a live process's heap
+    description: >-
+      Run against a process by pid or partial name. For a live target, leaks prints allocation contents
+      by default (equivalent to -fullContent), so piping through grep surfaces plaintext passwords,
+      tokens and keys held in memory. Requires task-port access to the target.
+    code: leaks -fullContent <TARGET_PROCESS_NAME> 2>/dev/null | grep -iE 'password|token|bearer|api[_-]?key'
+    tactics:
+      - Credential Access
+      - Collection
+    tags: []
+  - name: Export a process memory graph for offline analysis and exfiltration
+    description: >-
+      The -outputGraph option serialises the target's VM and malloc nodes and their references into a
+      ".memgraph" file; adding -fullContent stores the actual object contents. The file can be copied to
+      attacker infrastructure and mined later with heap, stringdups or the Xcode Memory Graph Debugger.
+    code: leaks -outputGraph /tmp/<TARGET>.memgraph -fullContent <TARGET_PID>
+    tactics:
+      - Collection
+      - Credential Access
+    tags: []
+  - name: Capture the memory of a command launched under leaks
+    description: >-
+      The -atExit option runs leaks against a launched command when it exits, automatically enabling
+      MallocStackLogging for allocation backtraces. It collects the heap of a helper the operator
+      launches, so no existing process's task port is needed. -atExit must come last, before -- and the
+      command.
+    code: leaks -quiet -atExit -- <COMMAND_TO_LAUNCH> <ARGS>
+    tactics:
+      - Collection
+      - Execution
+    tags: []
+  - name: Enumerate a target's heap objects to locate credential-bearing types
+    description: >-
+      The -referenceTree option prints a top-down tree of the process's malloc allocations and VM
+      regions, accepting a class-name regular expression to filter it. An operator can map memory and
+      narrow to classes that commonly carry secrets, such as Foundation string and data buffers.
+    code: leaks -referenceTree='NSString|NSData|CFData' <TARGET_PID>
+    tactics:
+      - Discovery
+      - Collection
+    tags: []
+paths:
+  - /usr/bin/leaks
+detections: []
+resources:
+  - name: "ESFang: Exploring the macOS Endpoint Security Framework for Threat Detection (WithSecure Labs)"
+    url: https://labs.withsecure.com/publications/esfang-exploring-the-macos-endpoint-security-framework-for-threat-detection
+  - name: "leaks(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/leaks.1.html
+  - name: "Apple Developer: Finding Memory Leaks"
+    url: https://developer.apple.com/library/archive/documentation/Performance/Conceptual/ManagingMemory/Articles/FindingLeaks.html
+  - name: "Broken isolation - draining your credentials from popular macOS password managers (Objective by the Sea v7, Wojciech Reguła)"
+    url: https://objectivebythesea.org/v7/talks/OBTS_v7_wRegula.pdf
+  - name: "macOS Memory Dumping (HackTricks)"
+    url: https://hacktricks.wiki/en/macos-hardening/macos-security-and-privilege-escalation/macos-files-folders-and-binaries/macos-memory-dumping.html
+  - name: "MITRE ATT&CK T1003: OS Credential Dumping"
+    url: https://attack.mitre.org/techniques/T1003/
