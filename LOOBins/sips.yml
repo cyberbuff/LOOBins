@@ -1,0 +1,45 @@
+name: sips
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Resize, recompress, and strip metadata from images, or execute a JavaScript file, from the command line.
+full_description: sips (Scriptable Image Processing System) is Apple's built-in command-line tool for querying and modifying raster image files and ColorSync ICC profiles. It resamples, crops, rotates, converts formats, edits embedded properties, and since Big Sur can execute a JavaScript file to modify or generate images. Being a signed, notarized Apple binary present on every macOS install, it lets an attacker run a collection-and-exfiltration chain without dropping tooling. It can shrink and recompress captured screenshots before they are encoded and exfiltrated, and delete identifying image metadata to reduce forensic artifacts.
+created: 2026-09-20
+example_use_cases:
+  - name: Downscale and recompress a captured screenshot before exfiltration
+    description: After a screenshot is taken (for example with screencapture) and before it is base64-encoded and sent to a C2 server, sips resamples it to smaller dimensions with -z/--resampleHeightWidth and lowers JPEG quality with -s/--setProperty formatOptions in one invocation, producing a smaller file that is easier to stage. This post-processing sequence is documented in the GMERA/Stockfolio macOS reconnaissance scripts. No elevated privileges are required; sips operates on files the current user can read and write.
+    code: "sips -z 500 800 -s formatOptions 50 /tmp/screen.jpg"
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Strip identifying metadata from an image to frustrate forensics
+    description: sips deletes writable image properties with -d/--deleteProperty. Removing fields such as make, model, artist, and copyright, or clearing color-management dictionaries with --deleteColorManagementProperties, strips camera, device, and authorship markers from images an operator drops onto or exfiltrates from a host. It modifies the file in place and requires only write access to it.
+    code: "sips -d make -d model -d artist -d copyright --deleteColorManagementProperties <IMAGE_PATH>"
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Execute a JavaScript file through a signed Apple binary
+    description: sips accepts -j/--js to execute a JavaScript file, running an attacker-supplied script inside a legitimately signed and notarized Apple binary instead of a separately dropped interpreter. The object model exposed to the script (the sips global, Canvas, Image, and Output objects) is image-oriented and is not a general-purpose shell, so its offensive value is proxied JavaScript execution and process masquerading, not arbitrary command execution.
+    code: "sips -j <SCRIPT_PATH>.js <IMAGE_PATH>"
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/sips
+detections:
+  - name: "Sigma: Screen Capture - macOS (detects the screencapture stage that typically precedes sips post-processing in this chain)"
+    url: https://github.com/SigmaHQ/sigma/blob/master/rules/macos/process_creation/proc_creation_macos_screencapture.yml
+resources:
+  - name: "Objective-See: The Mac Malware of 2019 (documents the screencapture + sips + base64 exfil routine)"
+    url: https://objective-see.org/blog/blog_0x53.html
+  - name: "ESET WeLiveSecurity: Mac cryptocurrency trading application rebranded, bundled with malware (GMERA/Stockfolio reconnaissance script using sips)"
+    url: https://www.welivesecurity.com/2020/07/16/mac-cryptocurrency-trading-application-rebranded-bundled-malware/
+  - name: "sips(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/sips.1.html
+  - name: "Unofficial documentation of the sips JavaScript API"
+    url: https://manicmaniac.github.io/sips-js-api/
+  - name: "MITRE ATT&CK T1113: Screen Capture"
+    url: https://attack.mitre.org/techniques/T1113/
+acknowledgements:
+  - Patrick Wardle (Objective-See, documented the screencapture and sips exfiltration chain)
+  - Marc-Etienne M. Leveille (ESET, documented the GMERA/Stockfolio reconnaissance script)
