@@ -1,0 +1,28 @@
+name: gktool
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Assess Gatekeeper policy on an app bundle and pre-warm the assessment cache so its first launch is silent.
+full_description: gktool is a command-line utility introduced in macOS 14 (Sonoma) for assessing Gatekeeper policy. Its single documented subcommand, gktool scan <path>, runs a Gatekeeper assessment of an app bundle and populates syspolicyd's assessment cache, pre-warming it at install time so the first launch skips the "Verifying..." dialog and delay. An attacker whose payload already passes Gatekeeper (signed and notarized, or with its com.apple.quarantine attribute removed) can scan it to make the victim's first launch silent, and to exercise the host's policy without launching the bundle. gktool only assesses and caches; a bundle that would be refused at launch is still refused, so trust must come from valid signing and notarization or a separate quarantine removal.
+created: 2026-09-20
+example_use_cases:
+  - name: Pre-warm the Gatekeeper cache to suppress the first-launch "Verifying..." dialog
+    description: Scanning a dropped payload caches its Gatekeeper assessment, so the victim's first launch produces no "Verifying..." dialog or delay. This works only on a payload that already passes Gatekeeper and does not bypass a block. The scan runs as any user, needs only the bundle on disk, and probes the host's policy without launching the payload.
+    code: gktool scan /path/to/Payload.app
+    tactics:
+      - Defense Evasion
+      - Discovery
+    tags:
+      - gatekeeper
+paths:
+  - /usr/bin/gktool
+detections: []
+resources:
+  - name: "macOS 14 Release Notes (gktool introduction)"
+    url: https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes
+  - name: "gktool(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/gktool.8.html
+  - name: "Apple: Gatekeeper and runtime protection in macOS"
+    url: https://support.apple.com/guide/security/gatekeeper-and-runtime-protection-sec5599b66df/web
+  - name: "Munki issue #1180: Pre-warm .apps on macOS Sonoma with gktool"
+    url: https://github.com/munki/munki/issues/1180
+  - name: "Red Canary: Gatekeeping in macOS"
+    url: https://redcanary.com/blog/threat-detection/gatekeeper/
