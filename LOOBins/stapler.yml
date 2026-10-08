@@ -1,0 +1,44 @@
+name: stapler
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Attach and validate Apple notarization tickets on apps, disk images, and installer packages.
+full_description: The stapler binary attaches ("staples") a notarization ticket to a code-signed app bundle, a UDIF disk image, or a signed flat installer package, so Gatekeeper can confirm the enclosed executables were notarized without contacting Apple's servers at launch. It first appeared in macOS 10.14 as part of the Developer ID workflow. Once an attacker has had a malicious payload notarized under a Developer ID account, as with OSX.Shlayer in 2020 and a notarized Swift stealer in 2025, stapling the ticket lets it launch on offline or network-restricted hosts with no first-launch call to Apple. stapler only staples or validates; the prerequisite notarization happens at Apple's notary service, not in this binary.
+created: 2026-09-20
+example_use_cases:
+  - name: Staple a notarization ticket to a notarized payload for offline execution
+    description: Once a malicious app bundle or disk image is notarized under a Developer ID account, stapler staple embeds the returned ticket. Gatekeeper then validates it locally, so the payload launches on offline, air-gapped, or restricted-network hosts with no callback to Apple. Stapling does not itself notarize.
+    code: stapler staple <PAYLOAD>.dmg
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags:
+      - gatekeeper
+  - name: Staple a ticket to a signed flat installer package
+    description: stapler staple also operates on signed flat installer packages (.pkg). A notarized package whose pre-install or post-install scripts run with elevated privileges passes Gatekeeper once the ticket is stapled, with no launch-time notarization lookup. The package must already be code-signed and notarized; an unsigned one is an error.
+    code: stapler staple <PAYLOAD>.pkg
+    tactics:
+      - Defense Evasion
+      - Resource Development
+    tags: []
+  - name: Validate notarization and revocation status of a payload before deployment
+    description: stapler validate compares a stapled ticket against the latest one held by Apple's ticketing service, exiting non-zero (EX_NOPERM) if it was revoked. An attacker can confirm a payload is still trusted before dropping it, or detect that Apple revoked the developer credential behind an existing implant. Validation requires internet access.
+    code: stapler validate -v <PAYLOAD>.app
+    tactics:
+      - Discovery
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/stapler
+detections: []
+resources:
+  - name: "Apple Platform Security: Protecting against malware (Gatekeeper revocation tickets)"
+    url: https://support.apple.com/guide/security/protecting-against-malware-sec469d47bd8/web
+  - name: "Apple: Notarizing macOS software before distribution"
+    url: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
+  - name: "stapler(1) man page"
+    url: https://keith.github.io/xcode-man-pages/stapler.1.html
+  - name: "Objective-See: Apple Approved Malware (notarized OSX.Shlayer)"
+    url: https://objective-see.org/blog/blog_0x4E.html
+  - name: "Jamf Threat Labs: MacSync stealer evolution, code-signed and notarized Swift malware"
+    url: https://www.jamf.com/blog/macsync-stealer-evolution-code-signed-swift-malware-analysis/
+  - name: "How notarization works"
+    url: https://eclecticlight.co/2020/08/28/how-notarization-works/
