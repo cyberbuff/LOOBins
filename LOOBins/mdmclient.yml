@@ -1,0 +1,46 @@
+name: mdmclient
+author: Hare Sudhan (@cyb3rbuff)
+short_description: The macOS MDM client daemon, whose query verbs enumerate a host's management posture.
+full_description: >-
+  mdmclient is the built-in Mobile Device Management client daemon on macOS, launched and
+  supervised by launchd. Once a host is enrolled through a management profile, it receives
+  configuration profiles and commands over Apple Push Notification service and reports device
+  state back to the MDM server. The binary also exposes command-line verbs that locally
+  simulate the queries an MDM server would issue. Its manual page warns that all command
+  arguments are private and may change without notice. For an attacker with root, these verbs
+  locally reveal whether the machine is managed, which MDM server owns it, its enrollment and
+  supervision state, and what profiles, applications, and security protections are present.
+created: 2026-09-20
+example_use_cases:
+  - name: Determine MDM enrollment and management posture
+    description: >-
+      The DumpManagementStatus verb prints the host's management state in property-list form:
+      enrollment status, the MDM server URL and organization name, the enrollment type (ADE,
+      Account-Driven, or profile-based), and supervision and user-approval status. This shows
+      whether an MDM can push further commands and who controls the host. Requires root for the
+      full status.
+    code: sudo /usr/libexec/mdmclient DumpManagementStatus
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate device configuration and installed software
+    description: >-
+      The QueryInstalledProfiles, QueryInstalledApps, QueryDeviceInformation, and
+      QuerySecurityInfo verbs locally replay the MDM queries a server would issue. Profiles
+      reveal restrictions, certificate payloads, and security-tool configurations. The
+      application inventory identifies security tooling and installed versions. Device
+      information returns the serial number, model, and OS build for fingerprinting. Security
+      information reports FileVault, firmware password, and related protection status. Each
+      verb requires root for complete output, and all produce property-list data.
+    code: sudo /usr/libexec/mdmclient QueryInstalledProfiles
+    tactics:
+      - Discovery
+    tags: []
+paths:
+  - /usr/libexec/mdmclient
+detections: []
+resources:
+  - name: "mdmclient - Configuration Profiles documentation (verb reference)"
+    url: https://mosen.github.io/profiledocs/troubleshooting/mdmclient.html
+  - name: "Der Flounder: Using mdmclient DumpManagementStatus to get information about MDM management"
+    url: https://derflounder.wordpress.com/2025/03/16/using-usr-libexec-mdmclient-dumpmanagementstatus-to-get-information-about-mdm-management/
