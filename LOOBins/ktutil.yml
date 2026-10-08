@@ -1,0 +1,54 @@
+name: ktutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read, extract, forge, and manipulate Kerberos keytabs on macOS.
+full_description: ktutil is the Heimdal keytab-management tool bundled with macOS. A keytab stores long-term Kerberos key material (for example AES256 keys) for a principal, letting any process that holds those keys authenticate as that principal without the plaintext password. macOS ships a system keytab at /etc/krb5.keytab, and users can create their own keytabs anywhere. Subcommands include list, add, copy, get, remove, and purge. Because a keytab entry is key material equivalent to a saved password hash, an attacker with code execution can read keys from an existing keytab, copy one out for offline reuse, or forge a new keytab from a password or raw hex key to feed to kinit or Bifrost and request a Ticket Granting Ticket. macOS Heimdal differs from the MIT Kerberos on Linux, which has no ktutil of this design. It is a signed Apple binary present on every install and is not covered by GTFOBins.
+created: 2026-09-20
+example_use_cases:
+  - name: Read key material from the system keytab
+    description: list prints the principals in a keytab; --keys adds the raw key material and --timestamp the add time. With -k pointed at /etc/krb5.keytab it dumps the host and service AES256 keys, equivalent to password hashes and replayable for tickets. The root-owned system keytab needs root or its owning group; a world-readable user keytab needs no elevation.
+    code: ktutil -k /etc/krb5.keytab list --keys --timestamp
+    tactics:
+      - Credential Access
+      - Discovery
+    tags: []
+  - name: Copy keytab entries out to a file for exfiltration
+    description: copy copies all entries from a source keytab to a destination keytab, and --filter-principal restricts it to a principal glob. An attacker with read access duplicates the key material into an attacker-controlled file for exfiltration and replay on another host. Copying the system keytab needs root or its owning group; a user keytab needs only read access.
+    code: ktutil copy '--filter-principal=host/*@<REALM>' /etc/krb5.keytab /tmp/.stash.keytab
+    tactics:
+      - Credential Access
+      - Collection
+    tags: []
+  - name: Inject a captured AES key into a keytab (overpass-the-hash)
+    description: add builds a keytab entry for a principal, and -H/--hex supplies the key as raw hex rather than deriving it from a password. An attacker who has dumped a principal's AES key rebuilds a usable keytab and requests a TGT with it, never knowing the plaintext. -e and -V set the encryption type and key version number, which must match the principal's real values. Writing an attacker-owned keytab needs no elevation.
+    code: ktutil -k /tmp/.oph.keytab add -p <PRINCIPAL>@<REALM> -e aes256-cts-hmac-sha1-96 -V <KVNO> --hex
+    tactics:
+      - Credential Access
+      - Lateral Movement
+    tags: []
+  - name: Forge a keytab from a known password for password-less re-authentication
+    description: add with -w derives a key from a supplied password and stores it in a keytab. An attacker who has recovered a service-account or machine-account password turns it into a reusable credential that authenticates non-interactively as that principal while the password is valid, bypassing password prompts and interactive-logon controls. --no-salt and -e control salting and encryption type. The keytab persists on disk for later reuse and needs no elevation to write.
+    code: ktutil -k /tmp/.persist.keytab add -p <PRINCIPAL>@<REALM> -e aes256-cts-hmac-sha1-96 -V <KVNO> -w <PASSWORD>
+    tactics:
+      - Credential Access
+      - Persistence
+    tags: []
+  - name: Remove keytab entries to cover tracks
+    description: remove deletes entries matching a principal, and purge removes superseded old key versions. After using a keytab, an attacker with write access deletes the entries they created or tampered with to reduce evidence of the theft. Modifying /etc/krb5.keytab requires root; a user keytab is editable by its owner without elevation.
+    code: ktutil -k /etc/krb5.keytab remove -p <PRINCIPAL>@<REALM>
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/sbin/ktutil
+detections:
+  - name: "Elastic: Potential Kerberos Attack via Bifrost (matches process arguments containing dump and keytab, the downstream workflow ktutil-extracted key material feeds)"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/lateral_movement_credential_access_kerberos_bifrostconsole
+resources:
+  - name: "When Kirbi Walks the Bifrost (SpecterOps, macOS Kerberos keytab abuse)"
+    url: https://specterops.io/blog/2019/11/14/when-kirbi-walks-the-bifrost/
+  - name: "MITRE ATT&CK T1558: Steal or Forge Kerberos Tickets"
+    url: https://attack.mitre.org/techniques/T1558/
+  - name: "MITRE ATT&CK T1550.003: Use Alternate Authentication Material - Pass the Ticket"
+    url: https://attack.mitre.org/techniques/T1550/003/
+acknowledgements:
+  - Cody Thomas (SpecterOps, Bifrost and macOS Kerberos keytab research)
