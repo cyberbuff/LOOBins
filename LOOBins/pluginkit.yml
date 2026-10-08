@@ -1,0 +1,74 @@
+name: pluginkit
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query and manage the per-user PlugInKit app extension database.
+full_description: |-
+  pluginkit manages the PlugInKit subsystem for the current user, querying the plug-in database of app
+  extensions (Finder Sync, Share, Action, Widget) and making interventions intended for extension
+  development. An attacker gets a scriptable interface to the extension registry that needs no GUI: it can
+  enumerate every installed app extension, register a bundle that automatic discovery would not pick up,
+  and change a user's election for an extension (use or ignore). A signed, sandboxed Finder Sync extension
+  that is registered and elected "use" loads whenever the user browses a watched directory, giving code
+  execution that survives logout and reboot.
+created: 2026-09-20
+example_use_cases:
+- name: Enumerate all installed app extensions
+  description: The -m (match) operation scans every registered plug-in, printing one per line with a tag
+    for the user election state (+ use, - ignore, ! debug, = superseded, ? unknown). With -A (all
+    versions) and -v (verbose, repeatable) it inventories every app extension, including third-party
+    security tools, without root.
+  code: pluginkit -m -A -v -v
+  tactics:
+  - Discovery
+  tags: []
+- name: Enumerate extensions for a specific extension point
+  description: The -p (protocol) flag is shorthand for the NSExtensionPointName match key and limits the
+    -m scan to one extension point. Querying the Finder Sync extension point locates the bundle
+    identifiers of installed Finder Sync plug-ins, to target them or to confirm a newly planted one is
+    registered.
+  code: pluginkit -m -p com.apple.FinderSync -v
+  tactics:
+  - Discovery
+  tags: []
+- name: Register a Finder Sync extension bundle
+  description: The -a flag adds a plug-in at a given path even when it is not eligible for automatic
+    discovery, registering a malicious Finder Sync .appex without the user opening System Settings. The
+    extension must be code-signed, sandboxed, and inside an app bundle. Registration via -a alone is not
+    permanent, since clean-ups may remove it unless the "use" election is set.
+  code: pluginkit -a /Applications/<APP>.app/Contents/PlugIns/<EXTENSION>.appex
+  tactics:
+  - Persistence
+  - Defense Evasion
+  tags: []
+- name: Enable a registered extension by bundle ID for persistence
+  description: -e use applies the "use" election to every plug-in with the given identifier, enabling a
+    registered extension without the user opening System Settings. The plug-in then runs in its own
+    process that the OS relaunches when the user browses a watched directory, and the election persists
+    where a bare -a registration would not.
+  code: pluginkit -e use -i <BUNDLE_ID>
+  tactics:
+  - Persistence
+  - Defense Evasion
+  tags: []
+- name: Disable a security or endpoint extension via its election
+  description: The -e ignore election marks all plug-ins with the given identifier as ignored for the
+    current user, stopping PlugInKit from loading them. An attacker in a user session can disable a
+    defensive Finder Sync, Content Filter, or other app extension without deleting any files, leaving the
+    bundle in place.
+  code: pluginkit -e ignore -i <BUNDLE_ID>
+  tactics:
+  - Defense Evasion
+  tags: []
+paths:
+- /usr/bin/pluginkit
+detections:
+- name: "Elastic Detection Rules: Finder Sync Plugin Registered and Enabled"
+  url: https://github.com/elastic/detection-rules/blob/main/rules/macos/persistence_finder_sync_plugin_pluginkit.toml
+resources:
+- name: "Beyond the good ol' LaunchAgents - 26 - Finder Sync Plugins (Csaba Fitzl)"
+  url: https://theevilbit.github.io/beyond/beyond_0026/
+- name: "Finder Syncs (Objective-See)"
+  url: https://objective-see.org/blog/blog_0x11.html
+- name: "pluginkit(8) manual page"
+  url: https://keith.github.io/xcode-man-pages/pluginkit.8.html
+acknowledgements:
+- Csaba Fitzl (@theevilbit, Finder Sync plugin persistence research)
