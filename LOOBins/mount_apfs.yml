@@ -1,0 +1,72 @@
+name: mount_apfs
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Mount an APFS volume or a local APFS snapshot at an arbitrary path.
+full_description: >-
+  mount_apfs is the APFS mount helper inside the apfs.fs bundle, normally run by
+  diskarbitrationd(8) or mount(8). It attaches an APFS volume device node or a
+  named snapshot of a mounted volume to a directory. TCC does not protect files
+  read through a mounted local snapshot, so mounting a Time Machine snapshot of
+  the data volume exposes the user TCC database, Mail, Messages and Safari
+  history, and the mount(8) noowners option makes every object appear owned by
+  the calling user. Since tmutil snapshot creation is open to any user, this was
+  once reachable unprivileged (CVE-2020-9771); Apple's fix in macOS Catalina
+  10.15.4 and a Mojave security update gates the read on Full Disk Access
+  instead of blocking the mount.
+created: 2026-09-20
+example_use_cases:
+  - name: Read TCC-protected data through a mounted Time Machine snapshot
+    description: >-
+      Any user can create a local snapshot with "tmutil localsnapshot" where
+      Time Machine is configured. The mount_apfs -s form mounts that snapshot,
+      and since TCC does not protect files read from it, the user TCC database,
+      Messages, Mail and Safari history become readable. Before the
+      CVE-2020-9771 fix this worked unprivileged; afterwards the caller needs
+      Full Disk Access.
+    code: mount_apfs -o noowners -s com.apple.TimeMachine.<SNAPSHOT_DATE>.local /System/Volumes/Data /tmp/snap
+    tactics:
+      - Credential Access
+      - Collection
+      - Defense Evasion
+    tags: []
+  - name: Ignore on-disk file ownership when mounting an APFS volume
+    description: >-
+      The mount(8) noowners option makes all objects on the volume appear owned
+      by user ID 99, which the kernel treats as the current effective user.
+      Applied to an APFS volume device node from diskutil list (an external
+      disk, a second internal volume, or a disk image volume), this reads other
+      local users' files without changing any on-disk permission, and invoking
+      the helper directly skips diskarbitrationd.
+    code: mount_apfs -o rdonly,noowners /dev/disk<N>s<M> /tmp/mnt
+    tactics:
+      - Privilege Escalation
+      - Collection
+    tags: []
+  - name: Keep the mount out of the Finder with nobrowse
+    description: >-
+      The mount(8) nobrowse option keeps the mount point out of the GUI, so the
+      mounted snapshot or volume does not appear on the Desktop or in the Finder
+      sidebar. With a mount point outside /Volumes, a snapshot stays out of a
+      logged-in user's view, though the mount is still listed by mount(8) and
+      the filesystem APIs.
+    code: mount_apfs -o nobrowse,noowners,rdonly -s com.apple.TimeMachine.<SNAPSHOT_DATE>.local /System/Volumes/Data /tmp/snap
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /System/Library/Filesystems/apfs.fs/Contents/Resources/mount_apfs
+  - /sbin/mount_apfs
+detections:
+  - name: "Elastic: TCC Bypass via Mounted APFS Snapshot Access"
+    url: https://github.com/elastic/detection-rules/blob/main/rules/macos/defense_evasion_tcc_bypass_mounted_apfs_access.toml
+resources:
+  - name: "CVE-2020-9771 - mount_apfs TCC bypass and privilege escalation (Csaba Fitzl, theevilbit)"
+    url: https://theevilbit.github.io/posts/cve_2020_9771/
+  - name: "Bypassing macOS TCC User Privacy Protections By Accident and Design (SentinelLabs)"
+    url: https://www.sentinelone.com/labs/bypassing-macos-tcc-user-privacy-protections-by-accident-and-design/
+  - name: "Return of the mac(OS): TCC Database Manipulation (Interpres Security)"
+    url: https://web.archive.org/web/20240411112413/https://interpressecurity.com/resources/return-of-the-macos-tcc/
+  - name: "MITRE ATT&CK T1006: Direct Volume Access"
+    url: https://attack.mitre.org/techniques/T1006/
+acknowledgements:
+  - Csaba Fitzl (@theevilbit) - CVE-2020-9771 research
+  - Marina Liang (Interpres Security) - macOS TCC manipulation research
