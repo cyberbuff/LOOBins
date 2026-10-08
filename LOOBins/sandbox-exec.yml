@@ -1,0 +1,52 @@
+name: sandbox-exec
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Launch an arbitrary command inside a Seatbelt sandbox described by a profile.
+full_description: |
+  sandbox-exec is a macOS command-line utility that places a process into a Seatbelt (App Sandbox) container described by an
+  SBPL (Sandbox Profile Language) profile, supplied inline with -p, from a file with -f, or by name with -n. Apple marks it
+  deprecated in favor of the entitlement-based App Sandbox, but the binary still ships on every macOS install and runs
+  profiles. Its offensive value is the launcher: the command it runs becomes a child of /usr/bin/sandbox-exec, an
+  Apple-signed system binary, so the payload's immediate parent is that binary rather than the delivery process. A permissive
+  profile such as (version 1)(allow default) imposes no restriction and turns the tool into a plain proxy launcher, while a
+  restrictive profile lets an operator confine a dropped second-stage to only the paths and services it needs.
+created: 2026-09-20
+example_use_cases:
+  - name: Proxy execution under an Apple-signed parent with a permissive profile
+    description: A permissive inline profile applies no restriction, so sandbox-exec runs the target command unmodified while inserting itself as the parent. The payload's immediate parent becomes /usr/bin/sandbox-exec (Apple-signed) rather than the delivery process. The -p flag supplies the profile string on the command line.
+    code: sandbox-exec -p '(version 1)(allow default)' /path/to/payload
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Execute from an attacker-supplied profile file
+    description: The -f flag reads the profile from a file on disk instead of the command line, keeping process arguments short and moving the profile into a dropped .sb artifact. The profile file can be staged in a temporary or hidden location alongside the payload.
+    code: sandbox-exec -f /private/tmp/.profile.sb /path/to/payload
+    tactics:
+      - Execution
+      - Defense Evasion
+    tags: []
+  - name: Confine a dropped second-stage to attacker-chosen paths
+    description: A deny-by-default profile with selective allow rules restricts what the launched process can read, write, and reach, letting an operator scope a second-stage so it touches only intended locations (for example writing solely under /private/tmp). This shapes the payload's own resource access and file-path footprint.
+    code: sandbox-exec -p '(version 1)(deny default)(allow process*)(allow file-read*)(allow file-write* (subpath "/private/tmp"))(allow network*)' /path/to/payload
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/sandbox-exec
+detections: []
+resources:
+  - name: "sandbox-exec(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/sandbox-exec.1.html
+  - name: "Apple Developer: App Sandbox"
+    url: https://developer.apple.com/documentation/security/app-sandbox
+  - name: "MITRE ATT&CK T1218: System Binary Proxy Execution"
+    url: https://attack.mitre.org/techniques/T1218/
+  - name: "Apple Sandbox Guide v1.0 (fG!, reverse.put.as)"
+    url: https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf
+  - name: "A quick glance at macOS' sandbox-exec (Julio Merino)"
+    url: https://jmmv.dev/2019/11/macos-sandbox-exec.html
+  - name: "Containing Janicab with sandbox-exec (macmark.de)"
+    url: https://www.macmark.de/blog/osx_blog_2013-08-a.php
+acknowledgements:
+  - Julio Merino (documentation of sandbox-exec profile usage)
+  - "fG! / reverse.put.as (Apple Sandbox Guide)"
