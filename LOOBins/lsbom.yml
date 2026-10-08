@@ -1,0 +1,45 @@
+name: lsbom
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Print the file manifest, permissions and ownership recorded inside a macOS bill-of-materials (bom) file.
+full_description: The lsbom binary interprets binary bom(5) files and prints, for every entry, the path, octal mode, UID/GID and (for plain files) size and CRC checksum. It ships at /usr/bin/lsbom, so no Xcode installation is needed. The Installer writes a .bom for every product into /var/db/receipts, and system and security updates leave theirs in /System/Library/Receipts; these receipts are world-readable by default. Because a receipt bom is an exact inventory of what a package placed on disk, including the permissions the installer set, lsbom lets an attacker enumerate installed security agents, management tooling and third-party software and their on-disk layout without touching an installed binary, and spot setuid, setgid or world-writable paths worth hijacking for privilege escalation. lsbom also reads the Bom inside an expanded flat package, revealing what an uninstalled .pkg would drop before it runs. Its companion mkbom builds a bom for packaging.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate installed software and its on-disk layout from receipt bom files
+    description: Every package installed by the macOS Installer leaves a world-readable bom under /var/db/receipts, so any user can read it without privileges. Running lsbom against a receipt prints the full path, mode and UID/GID of every file and directory the package installed, giving a precise inventory of a product's footprint without reading or executing any installed binary. The -s option limits output to paths for a quick listing.
+    code: lsbom -s /var/db/receipts/com.<VENDOR>.<PRODUCT>.bom
+    tactics:
+      - Discovery
+    tags: []
+  - name: Locate setuid, setgid and world-writable install paths for privilege escalation
+    description: A receipt bom records the exact mode the installer set on every file. lsbom -p Mf prints each entry's symbolic mode (for example -rwsr-xr-x) next to its filename, so an operator can filter for setuid/setgid binaries and for world-writable files and directories owned by root. A world-writable directory in a privileged process's load path, or a setuid root binary, is a candidate for binary or library hijacking. This needs only read access to the world-readable receipt. The example filters for the others-write bit.
+    code: lsbom -p Mf /var/db/receipts/com.<VENDOR>.<PRODUCT>.bom | grep -E '^.{8}w'
+    tactics:
+      - Privilege Escalation
+      - Discovery
+    tags: []
+  - name: Map a specific security product's footprint to neutralize it
+    description: An attacker who wants to disable or replace an endpoint security product can read that vendor's receipt bom to enumerate every file, helper and symbolic link it installed and exactly where each one lives, enabling a complete take-down or a targeted file replacement rather than a partial one. The -f and -l flags restrict the listing to plain files and symbolic links, filtering out directories and device entries. Reading the receipt requires no privileges; acting on the paths does.
+    code: lsbom -f -l /var/db/receipts/com.<EDR_VENDOR>.<PRODUCT>.bom
+    tactics:
+      - Defense Evasion
+      - Discovery
+    tags: []
+  - name: Read a package's file manifest without installing it
+    description: A macOS flat installer package contains a Bom file describing every path in its payload. After the package is expanded into a directory tree, lsbom against that Bom lists exactly what the package would install and where, along with the modes it would set, letting an operator vet a package from a distribution share, an MDM cache or a download, or decide what to alter before trojanizing it, without launching the Installer.
+    code: lsbom -p MUGsf /tmp/pkg/<COMPONENT>.pkg/Bom
+    tactics:
+      - Discovery
+      - Resource Development
+    tags: []
+paths:
+  - /usr/bin/lsbom
+detections: []
+resources:
+  - name: "lsbom(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/lsbom.8.html
+  - name: "mkbom(8) manual page"
+    url: https://keith.github.io/xcode-man-pages/mkbom.8.html
+  - name: "What got installed? How to learn exactly what a package contains/ed (The Eclectic Light Company)"
+    url: https://eclecticlight.co/2018/01/13/what-got-installed-how-to-learn-exactly-what-a-package-contains-ed/
+  - name: "Inspecting Packages (Scripting OS X)"
+    url: https://scriptingosx.com/2025/07/inspecting-packages/
