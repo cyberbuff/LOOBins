@@ -1,0 +1,61 @@
+name: aea
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Create and decrypt Apple Encrypted Archives with password, symmetric, or public-key modes.
+full_description: >-
+  aea is the command-line tool for Apple Encrypted Archives (AEA) and ships with macOS. It wraps the
+  Apple Archive format with authenticated encryption, offering password-based (scrypt), raw
+  symmetric-key, and public-key (ECDHE) profiles, and can sign archives with ECDSA. An attacker can
+  use it to encrypt collected data before moving it off the host, making the contents opaque to
+  content inspection. In the ECDHE profiles it can encrypt to a recipient public key so only the
+  holder of the matching private key can decrypt the result.
+created: 2026-09-20
+example_use_cases:
+  - name: Encrypt collected data before exfiltration
+    description: >-
+      The encrypt verb packs and encrypts an input into an .aea container. A symmetric-key profile
+      with -key-gen writes a freshly generated key to a file and produces an encrypted container.
+      The attacker keeps the key file to decrypt later.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__symmetric__none -i /tmp/collected.aar -o /tmp/collected.aea -key /tmp/c.key -key-gen
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Encrypt to a recipient public key so only the attacker can decrypt
+    description: >-
+      The ECDHE profiles encrypt a container to a recipient public key passed with --recipient-pub.
+      Data encrypted this way can only be recovered with the matching private key, which the attacker
+      holds off the host.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__ecdhe_p256__none -i /tmp/collected.aar -o /tmp/collected.aea --recipient-pub /tmp/operator.pub
+    tactics:
+      - Collection
+      - Exfiltration
+    tags: []
+  - name: Password-encrypt a container for out-of-band delivery
+    description: >-
+      The scrypt profile derives the key from a password supplied in a file with -password. This
+      keeps no key file on the host and lets the container be decrypted later with only the password.
+    code: aea encrypt -profile hkdf_sha256_aesctr_hmac__scrypt__none -i /tmp/collected.aar -o /tmp/collected.aea -password /tmp/pw.txt
+    tactics:
+      - Collection
+      - Exfiltration
+    tags:
+      - password
+  - name: Decrypt an attacker-supplied encrypted archive on the host
+    description: >-
+      The decrypt verb reverses any profile given the corresponding key, password, or private key.
+      An attacker can deliver second-stage tooling inside an AEA container and decrypt it on the host
+      with the native binary.
+    code: aea decrypt -i /tmp/stage2.aea -o /tmp/stage2 -key /tmp/c.key
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/aea
+detections: []
+resources:
+  - name: "aea(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/aea.1.html
+  - name: "MITRE ATT&CK T1560: Archive Collected Data"
+    url: https://attack.mitre.org/techniques/T1560/
+  - name: "MITRE ATT&CK T1041: Exfiltration Over C2 Channel"
+    url: https://attack.mitre.org/techniques/T1041/
