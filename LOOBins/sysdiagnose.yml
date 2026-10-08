@@ -1,0 +1,44 @@
+name: sysdiagnose
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Gather system-wide diagnostic state into a single staged archive.
+full_description: sysdiagnose is Apple's built-in diagnostic collector. One invocation harvests system state into a single compressed archive, including a complete system_logs.logarchive copy of the unified log, running process lists, resident memory usage, loaded kernel extensions, a System Profiler report, crash reports, disk usage, I/O Kit registry data, and network status. Built for bug reports rather than security, its output contains personal and identifiable data. An adversary with root gets a signed-binary bulk collector that installs nothing and stages an archive ready for exfiltration. It writes to /var/tmp by default, with flags to set the output name, directory, and root volume and to suppress UI feedback and the Finder reveal.
+created: 2026-09-20
+example_use_cases:
+- name: Bulk system-state collection to an attacker-chosen directory
+  description: A single invocation collects the full diagnostic set into one archive. -A sets the archive name, -f the output directory, -u disables UI feedback, and -b suppresses the Finder reveal, so the run leaves the compressed archive staged for exfiltration without visible prompts. Requires root.
+  code: sysdiagnose -u -b -A collection -f /private/tmp
+  tactics:
+  - Collection
+  - Discovery
+  tags: []
+- name: Collect only the unified log archive
+  description: The -r option restricts collection to system_logs.logarchive, a complete copy of the host's unified log covering recent process launches, network events, and authentication. This is a smaller, faster pull than a full sysdiagnose, and the logarchive can be moved off the host and read offline with the log command. Requires root.
+  code: sysdiagnose -u -b -r -A logs -f /private/tmp
+  tactics:
+  - Collection
+  tags: []
+- name: Gather heap and virtual-memory diagnostics for a target process
+  description: Supplying a process name or pid adds process-specific collection of the heap's malloc-allocated buffers, unreferenced malloc buffers, and virtual memory regions. This exposes the process's memory layout and, for leaked buffers, their captured contents, surfacing sensitive in-memory data. One process at a time. Requires root.
+  code: sysdiagnose -u -b -A proc <TARGET_PROCESS>
+  tactics:
+  - Collection
+  - Discovery
+  tags: []
+- name: Collect diagnostics from an alternate mounted volume
+  description: The -V option runs collection against a specified root volume rather than the live system, letting an adversary who has mounted another disk, snapshot, or backup collect its diagnostic state without booting it. The volume must already be mounted and readable. Requires root.
+  code: sysdiagnose -u -b -V <VOLUME_PATH> -A vol -f /private/tmp
+  tactics:
+  - Collection
+  tags: []
+paths:
+- /usr/bin/sysdiagnose
+detections: []
+resources:
+- name: sysdiagnose(1) manual page
+  url: https://keith.github.io/xcode-man-pages/sysdiagnose.1.html
+- name: "Apple: Run system diagnostics in Activity Monitor on Mac"
+  url: https://support.apple.com/guide/activity-monitor/run-system-diagnostics-actmntr2225/mac
+- name: "The Eclectic Light Company: Explainer - sysdiagnose and logarchives"
+  url: https://eclecticlight.co/2026/06/27/explainer-sysdiagnose-and-logarchives/
+- name: "SentinelLabs: macOS Incident Response Part 1 - Collecting Device, File & System Data"
+  url: https://www.sentinelone.com/labs/macos-incident-response-part-1-collecting-device-file-system-data/
