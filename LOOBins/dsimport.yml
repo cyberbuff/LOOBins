@@ -1,0 +1,82 @@
+name: dsimport
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Import user, group, and other records into an Open Directory node from a flat file.
+full_description: >-
+  dsimport is the counterpart to dsexport: it reads a delimited or record-format
+  file and writes the parsed records into an Open Directory node, most commonly
+  the local node /Local/Default, and administrators use it to bulk provision
+  users and groups. Because it authenticates to the node with an admin
+  credential (--username/--password) and runs non-interactively, an attacker who
+  holds admin or root can create a backdoor local account, pin privileged
+  attributes onto records with --force, or append an account to the admin group
+  in a single invocation that replaces a sequence of dscl and dseditgroup
+  commands. It can also target a remote node with --remotehost for lateral
+  provisioning against another Mac.
+created: 2026-09-20
+example_use_cases:
+  - name: Create a hidden local backdoor account
+    description: >-
+      dsimport writes Users records from a StandardUser-formatted file into the
+      local Open Directory node. A UniqueID below 500 hides the account from the
+      login window and user list (macOS omits sub-500 users by default), giving
+      a persistent backdoor. Writing to /Local/Default requires root or an admin
+      credential via --username/--password.
+    code: dsimport <IMPORT_FILE> /Local/Default M --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Persistence
+    tags: []
+  - name: Force a root-equivalent UID onto imported records
+    description: >-
+      The --force option overwrites a named attribute for every record,
+      ignoring the value in the file. Forcing dsAttrTypeStandard:UniqueID to 0
+      gives each imported user root's UID and privileges while the import file
+      still looks ordinary. Requires an admin credential to write to the node.
+    code: dsimport <IMPORT_FILE> /Local/Default M --username <ADMIN_USER> --password <ADMIN_PASS> --force dsAttrTypeStandard:UniqueID 0 --template StandardUser
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags: []
+  - name: Append an account to the admin group
+    description: >-
+      With a StandardGroup-formatted file (RecordName, Password, PrimaryGroupID,
+      GroupMembership) and the A (append) conflict flag, dsimport adds members to
+      an existing group without recreating it. Targeting the admin group grants
+      the listed account administrative rights. Requires an admin credential to
+      write to the node.
+    code: dsimport <ADMIN_GROUP_FILE> /Local/Default A --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardGroup
+    tactics:
+      - Privilege Escalation
+      - Persistence
+    tags:
+      - groups
+  - name: Overwrite an existing account's attributes
+    description: >-
+      The O (overwrite) conflict flag deletes all attribute values on any record
+      matching by name, UID, or GID, then replaces them with the import data. It
+      can reset an existing admin account's password, shell, or home directory
+      while keeping the familiar name. With --crypt, passwords in the file are
+      read as crypt hashes. Requires an admin credential.
+    code: dsimport <IMPORT_FILE> /Local/Default O --crypt --username <ADMIN_USER> --password <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Provision records on a remote Open Directory node
+    description: >-
+      --remotehost directs the import at a directory node on another host, with
+      --remoteusername/--remotepassword authenticating the connection. With valid
+      directory admin credentials, an attacker can create or modify accounts on a
+      remote Mac without an interactive session on the target.
+    code: dsimport <IMPORT_FILE> /Local/Default M --remotehost <TARGET_IP> --remoteusername <ADMIN_USER> --remotepassword <ADMIN_PASS> --template StandardUser
+    tactics:
+      - Lateral Movement
+      - Persistence
+    tags: []
+paths:
+  - /usr/bin/dsimport
+detections: []
+resources:
+  - name: dsimport(1) manual page
+    url: https://keith.github.io/xcode-man-pages/dsimport.1.html
+  - name: "MITRE ATT&CK T1136.001: Create Account - Local Account"
+    url: https://attack.mitre.org/techniques/T1136/001/
