@@ -1,0 +1,44 @@
+name: derq
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query DER-encoded entitlements from a Mach-O on disk or from a running process via csops(2).
+full_description: The derq command queries DER (and legacy XML) encoded entitlements using the CoreEntitlements library. It can read entitlements from a Mach-O file, a raw input stream, or a live process by PID through the csops(2) system call, and it exposes a small query language (DERQL) for selecting keys, indexing arrays, and matching boolean or string values. Entitlements declare what a process may do, including private grants such as com.apple.private.tcc.allow, com.apple.security.get-task-allow, and library-validation controls. Because derq can dump the full entitlement set of an arbitrary running process without root, an attacker can map which local processes hold TCC privileges or are injectable before selecting one to abuse.
+created: 2026-09-20
+example_use_cases:
+  - name: Dump the entitlements of a running process via csops(2)
+    description: The csops subcommand extracts the entitlements blob from a live process by PID using csops(2) and prints it; with --xml the full set is emitted as an XML plist. It runs in the user's own context and reads the entitlements of many processes without root, showing an attacker which privileges a target holds.
+    code: derq csops -p <TARGET_PID> --xml
+    tactics:
+      - Discovery
+    tags: []
+  - name: Extract embedded entitlements from a Mach-O on disk
+    description: The macho subcommand reads the DER entitlements embedded in a code signature from a Mach-O file and, with --xml, prints them as an XML plist. An attacker can survey installed applications, helper tools, and privileged daemons for dangerous or private entitlements without invoking the target binary.
+    code: derq macho -i <PATH_TO_BINARY> --xml
+    tactics:
+      - Discovery
+    tags: []
+  - name: Scan a process for an injectable entitlement using the boolean match operator
+    description: DERQL's CEMatchBool operation ("?") returns a successful exit code only when the selected key is a boolean set to true. Querying com.apple.security.get-task-allow this way tells an attacker whether the process can be attached to and injected into (the injection itself is a separate step). Because derq exits 0 on a match and non-zero otherwise, it can be scripted across many PIDs to enumerate injectable targets.
+    code: derq csops -p <TARGET_PID> com.apple.security.get-task-allow '?'
+    tactics:
+      - Discovery
+      - Privilege Escalation
+    tags: []
+  - name: Identify TCC-privileged processes by querying private entitlement keys
+    description: Selecting the com.apple.private.tcc.allow key from a running process and printing it with --xml reveals which TCC services that process is privately entitled to, such as full disk or accessibility access. An attacker can locate an already-privileged process to piggyback on or inject into to reach protected data. Reading the entitlements does not grant the access; it identifies where the access already lives.
+    code: derq csops -p <TARGET_PID> --xml com.apple.private.tcc.allow
+    tactics:
+      - Discovery
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/bin/derq
+detections: []
+resources:
+  - name: "derq(1) man page (xcode-man-pages mirror)"
+    url: https://keith.github.io/xcode-man-pages/derq.1.html
+  - name: "macOS Dangerous Entitlements & TCC perms (HackTricks)"
+    url: https://hacktricks.wiki/en/macos-hardening/macos-security-and-privilege-escalation/macos-security-protections/macos-dangerous-entitlements.html
+  - name: "Apple Developer: Disable Library Validation Entitlement"
+    url: https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation
+  - name: "DYLD_INSERT_LIBRARIES Dylib Injection in macOS/OSX (theevilbit)"
+    url: https://theevilbit.github.io/posts/dyld_insert_libraries_dylib_injection_in_macos_osx_deep_dive/
