@@ -1,0 +1,36 @@
+name: kextload
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Load kernel extensions (kexts) into the running macOS kernel.
+full_description: kextload loads a kernel extension (kext) into the running kernel. Code inside a kext runs at the highest OS privilege (Ring 0), letting a kernel-mode rootkit hide its own files, processes, and network activity, tamper with logs, and grant backdoor access. kextload hands the load to kextd/kernelmanagerd, so the kext must pass Apple's authentication. It has to be signed with a Developer ID granted kext-signing privileges, owned root:wheel, non-writable by group and other, and loaded as root. With SIP enabled, and on Apple Silicon, an untrusted kext will not load unless the operator reduces security from recoveryOS and reboots. The realistic attacker path is an abused or stolen kext-signing identity, or a target already configured with reduced security. kextload is deprecated in favor of "kmutil load" but remains on current macOS as the classic rootkit-installation primitive.
+created: 2026-09-20
+example_use_cases:
+  - name: Load a malicious kernel extension
+    description: >-
+      Loading a staged kext bundle runs its code at Ring 0, giving an attacker kernel-level persistence and stealth.
+      The kext can be specified by path or, with --bundle-id (-b) and --repository (-r), by its CFBundleIdentifier
+      from a non-standard directory so the staging location never appears in the process arguments. Adding --quiet
+      (-q) suppresses all informational and error output during the load. It requires root and, on current macOS,
+      a kext that passes Apple's authentication (or SIP reduced from recoveryOS). The OSX/Ventir trojan used this
+      once it had root, loading an open-source keylogger kext via "kextload /System/Library/Extensions/updated.kext".
+    code: sudo kextload /Library/Extensions/Rootkit.kext
+    tactics:
+      - Persistence
+      - Privilege Escalation
+      - Defense Evasion
+    tags: []
+paths:
+  - /sbin/kextload
+detections:
+  - name: "Splunk: MacOS Kextload Usage - process execution where process_name is kextload, excluding help invocations"
+    url: https://research.splunk.com/endpoint/9d680775-84a6-4625-a8ea-8182b9427ce4/
+resources:
+  - name: "MITRE ATT&CK T1547.006: Boot or Logon Autostart Execution - Kernel Modules and Extensions"
+    url: https://attack.mitre.org/techniques/T1547/006/
+  - name: "Atomic Red Team T1547.006: MacOS - Load Kernel Module via kextload and kmutil"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1547.006/T1547.006.md
+  - name: "The Ventir Trojan: assemble your macOS spy (Securelist) - loads its keylogger kext via kextload"
+    url: https://securelist.com/the-ventir-trojan-assemble-your-macos-spy/67267/
+  - name: "Kernel extensions in macOS (Apple Platform Security)"
+    url: https://support.apple.com/guide/security/securely-extending-the-kernel-sec8e454101b/web
+acknowledgements:
+  - Kaspersky (Securelist, Ventir macOS trojan analysis)
