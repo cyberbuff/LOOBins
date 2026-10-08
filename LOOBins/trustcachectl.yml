@@ -1,0 +1,36 @@
+name: trustcachectl
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query whether a code directory hash is present in a loaded kernel trust cache.
+full_description: trustcachectl is a macOS command-line utility (Apple silicon, introduced around 2022) that loads trust caches into the kernel and queries whether a given code directory hash (cd hash) is present in a loaded trust cache. A trust cache is the kernel's list of cd hashes that AppleMobileFileIntegrity (AMFI) treats as platform-trusted code, so membership determines whether a binary is granted platform trust at launch. The load subcommand is entitlement-gated and the shipping binary is only entitled to load the OTA update brain or global install assistant trust cache, so it cannot trust arbitrary code. The query subcommand is the attacker-relevant capability, a per-cd-hash yes/no oracle that reveals, without disabling SIP or AMFI, which binaries the kernel already trusts on a hardened system and which Apple-signed executables it will accept at launch.
+created: 2026-09-20
+example_use_cases:
+  - name: Query whether a single cd hash is trusted by the kernel
+    description: The query subcommand asks the kernel whether the supplied 40-hex-character cd hash is present in any loaded trust cache. A present cd hash is granted platform trust by AMFI, so the result is a yes/no oracle for whether the corresponding binary is treated as trusted platform code at launch. Unlike load, query requires no documented entitlement, making it a low-friction reconnaissance primitive on Apple silicon hosts.
+    code: trustcachectl query <CDHASH>
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate which on-disk binaries the kernel platform-trusts
+    description: Deriving a binary's cd hash from disk with codesign (-d --verbose=4 prints a CDHash line) and passing it to trustcachectl query maps which executables a loaded trust cache backs. Scripted across a directory of system binaries, this reveals which paths hold trust-cached platform code, helping an attacker pick living-off-the-land executables and gauge a locked-down system's signing posture without touching AMFI or SIP.
+    code: codesign -d --verbose=4 /usr/bin/<BINARY> 2>&1 | awk -F= '/^CDHash/{print $2}' | xargs trustcachectl query
+    tactics:
+      - Discovery
+    tags:
+      - codesign
+  - name: Confirm a relocated Apple-signed binary keeps its trust before staging it
+    description: Trust cache membership is keyed on the cd hash, not on the file's path or parent process, so an Apple-signed binary copied to an attacker-chosen location keeps the same cd hash and can still be granted platform trust by AMFI (subject to any launch constraints on newer macOS). After copying such a binary, an attacker queries the copy's cd hash to confirm it is still trust-cached and select an execution path AMFI will not reject at launch.
+    code: codesign -d --verbose=4 /tmp/staged 2>&1 | awk -F= '/^CDHash/{print $2}' | xargs trustcachectl query
+    tactics:
+      - Defense Evasion
+      - Discovery
+    tags: []
+paths:
+  - /usr/bin/trustcachectl
+detections: []
+resources:
+  - name: "trustcachectl(1) manual page"
+    url: https://keith.github.io/xcode-man-pages/trustcachectl.1.html
+  - name: "Apple Platform Security: Trust caches"
+    url: https://support.apple.com/guide/security/trust-caches-sec7d38fbf97/web
+  - name: "macOS trust cache CDHash caching abuse (XM Cyber research, aggregated by Mallory) - background on why trust cache membership matters to attackers"
+    url: https://www.mallory.ai/stories/019ef9c1-6df2-7527-a8ae-b8a8f289893e
