@@ -1,0 +1,81 @@
+name: mdutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Manage the Spotlight metadata stores, including disabling, erasing and removing a volume's index.
+full_description: >-
+  mdutil is Apple's command-line tool for managing the metadata stores that back Spotlight: turning indexing
+  on or off per volume, checking status, rebuilding a corrupt store and clearing cached network indexes. The
+  Spotlight index at /.Spotlight-V100 is a forensic artifact that records file metadata, timestamps and inode
+  relationships, and retains information about files even after they are deleted; mdfind (an existing LOOBin)
+  and manual forensic timelining both read from it. An operator with root can disable indexing, erase the
+  local stores, or remove the index directory outright, destroying this record of file activity. As a signed,
+  first-party Apple binary that admins invoke routinely, its use resembles ordinary system maintenance.
+created: 2026-09-20
+example_use_cases:
+  - name: Disable Spotlight indexing on all volumes to stop new activity being recorded
+    description: >-
+      The -i off flag turns a volume's indexing off, and -a applies it to every store on every volume. With
+      indexing disabled the metadata store stops updating, so later file activity goes unrecorded in the
+      Spotlight index. Modifying the system and data volumes requires root, and System Integrity Protection
+      guards some system stores.
+    code: sudo mdutil -a -i off
+    tactics:
+      - Defense Evasion
+    tags:
+      - spotlight
+  - name: Erase the local Spotlight stores to purge indexed history
+    description: >-
+      The -E flag erases each local store for the indicated volumes; with -a it clears every store. A store
+      rebuilds only if indexing is enabled, and only from files still present, so metadata about files deleted
+      before the erase is permanently lost. Erasing the system and data stores requires root.
+    code: sudo mdutil -E -a
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags:
+      - spotlight
+  - name: Remove a volume's Spotlight index directory outright
+    description: >-
+      The -X flag removes the Spotlight index directory (/.Spotlight-V100) on the specified volume, destroying
+      the on-disk index and the deleted-file metadata it held. Per the man page it does not disable indexing,
+      so Spotlight reevaluates the volume on remount, reboot, or an explicit mdutil -i or -E. Requires root,
+      and System Integrity Protection restricts some system stores.
+    code: sudo mdutil -X /Volumes/<VOLUME_NAME>
+    tactics:
+      - Defense Evasion
+      - Impact
+    tags:
+      - spotlight
+  - name: Enumerate indexing status before acting
+    description: >-
+      The -s flag displays the indexing status of the listed volumes and -a reports every volume. This
+      reconnaissance step tells an operator which volumes are indexed, and therefore which stores hold usable
+      data and are worth disabling or erasing, before any destructive action.
+    code: mdutil -s -a
+    tactics:
+      - Discovery
+    tags:
+      - spotlight
+  - name: Dump a volume's Spotlight configuration to find indexed and excluded paths
+    description: >-
+      The -P flag dumps the VolumeConfiguration.plist for the specified volume, which records the indexing
+      configuration including exclusions. It shows which locations are indexed and which are excluded,
+      identifying paths where staged files would not be captured. The plist lives under the root-owned index
+      directory, so reading it requires root.
+    code: sudo mdutil -P /
+    tactics:
+      - Discovery
+    tags:
+      - spotlight
+      - requires-root
+paths:
+  - /usr/bin/mdutil
+detections: []
+resources:
+  - name: "mdutil(1) manual page (Apple, via keith.github.io xcode-man-pages)"
+    url: https://keith.github.io/xcode-man-pages/mdutil.1.html
+  - name: "mdutil - ss64 macOS command reference"
+    url: https://ss64.com/mac/mdutil.html
+  - name: "MITRE ATT&CK T1070: Indicator Removal"
+    url: https://attack.mitre.org/techniques/T1070/
+  - name: "Parsing the Spotlight database (store.db) - Yogesh Khatri, Swift Forensics"
+    url: https://www.swiftforensics.com/2018/08/parsing-spotlight-database.html
