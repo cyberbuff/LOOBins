@@ -1,0 +1,61 @@
+name: pkgutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Query the Installer receipt database and expand, edit and re-flatten macOS flat installer packages (.pkg).
+full_description: The pkgutil binary reads and manipulates macOS Installer flat packages (.pkg) and accesses the "receipt" database the Installer keeps under /var/db/receipts to record what each package installed. It ships at /usr/sbin/pkgutil on stock macOS, so no Xcode installation is needed. Where xar only unwraps the outer archive, pkgutil --expand-full also decompresses each component's Payload and --flatten-full repacks it while preserving the original compression, giving a complete take-apart, edit and put-back cycle for a signed vendor installer without launching the Installer. Its receipt commands inventory installed software, and --forget discards the record that a package was installed while leaving the installed files in place.
+created: 2026-09-20
+example_use_cases:
+  - name: Fully expand a signed installer package to access its scripts and payload
+    description: pkgutil --expand-full decomposes a flat .pkg into a directory tree and, unlike --expand or xar, also decompresses each component package's Payload so the installed files and the preinstall/postinstall scripts are directly editable on disk. Patrick Wardle's DEF CON 25 "Death by 1000 Installers" research demonstrated this as the first step of an expand, insert and flatten cycle against shipping installers.
+    code: pkgutil --expand-full Legit.pkg /tmp/pkg
+    tactics:
+      - Resource Development
+      - Defense Evasion
+    tags: []
+  - name: Re-flatten an edited package tree into a trojanized installer
+    description: After editing an extracted script such as /tmp/pkg/<component>.pkg/Scripts/postinstall or replacing a payload file on disk, pkgutil --flatten-full rebuilds the archive from that tree, preserving the original payload compression. Re-flattening discards the original signature, so the result is unsigned, installs without the signed-package lock icon, and a quarantined unsigned, un-notarized package is still subject to Gatekeeper on a default system.
+    code: pkgutil --flatten-full /tmp/pkg /tmp/Trojaned.pkg
+    tactics:
+      - Resource Development
+      - Defense Evasion
+      - Execution
+    tags: []
+  - name: List the files a package would install
+    description: pkgutil --payload-files lists the files archived inside an uninstalled flat package without extracting it, requiring only read access to the package (a software distribution share, an MDM package cache or a downloaded update) and modifying nothing. It reveals what a package would install before deciding whether to trojanize it or push it as-is.
+    code: pkgutil --payload-files /Library/Vendor/Vendor.pkg
+    tactics:
+      - Discovery
+    tags: []
+  - name: Verify a package's code signature before tampering or deployment
+    description: pkgutil --check-signature reports whether an uninstalled flat package's signature is valid and prints its certificate chain. It requires only read access to the package and modifies nothing, revealing which Developer ID signed a package, or that it is unsigned, before deciding whether to trojanize it or push it as-is.
+    code: pkgutil --check-signature /Library/Vendor/Vendor.pkg
+    tactics:
+      - Discovery
+    tags: []
+  - name: Enumerate installed software through package receipts
+    description: >-
+      pkgutil --pkgs lists every installed package ID recorded in /var/db/receipts, giving a full roster of installed
+      software without reading the installed binaries themselves. Adding a regex (--pkgs=REGEXP) narrows the listing to
+      package IDs matching a pattern, so an attacker discovers which security agents, MDM components or third-party
+      software from a given vendor are present. Once a package ID is known, --files lists the exact files it placed on
+      disk based on its receipt, revealing where a target vendor's files live.
+    code: pkgutil --pkgs
+    tactics:
+      - Discovery
+    tags:
+      - files
+  - name: Erase installation receipts to frustrate forensic reconstruction
+    description: pkgutil --forget discards all receipt data about a package ID but deliberately leaves the installed files in place; writing to the receipt database under /var/db/receipts requires root. Afterward pkgutil --pkgs no longer lists the package, and the .plist and .bom recording its install date and file manifest are gone, severing the link between files an intrusion left behind and the installer that delivered them.
+    code: sudo pkgutil --forget com.<VENDOR>.<PRODUCT>
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /usr/sbin/pkgutil
+detections: []
+resources:
+  - name: "DEF CON 25: Death by 1000 Installers; it's All Broken! (Patrick Wardle)"
+    url: https://speakerdeck.com/patrickwardle/defcon-2017-death-by-1000-installers-its-all-broken
+  - name: "Scripting OS X: Inspecting Packages (pkgutil expand, payload-files and receipts)"
+    url: https://scriptingosx.com/2025/07/inspecting-packages/
+acknowledgements:
+  - Patrick Wardle (Objective-See, expand/flatten installer trojanization research)
