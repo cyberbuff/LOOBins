@@ -1,0 +1,61 @@
+name: bioutil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: View and change Touch ID biometric configuration and list or delete enrolled templates.
+full_description: >-
+  bioutil views and changes macOS biometrics (Touch ID) configuration, system-wide and per user, and lists
+  or deletes enrolled templates. It reports whether biometrics are enabled for unlock and Apple Pay and the
+  template count; with the write flag it toggles those settings or purges the templates. The fingerprint
+  data stays in the Secure Enclave, so bioutil only governs whether it is used. Reading the current user's
+  own configuration is unprivileged, but changing configuration, operating system-wide (-s), and deleting
+  another user's templates require root. With root, bioutil turns a hardware-backed authentication path into
+  a password one: disabling Touch ID for unlock forces the user to type their account or keychain password
+  into a login window, authentication dialog, or sudo prompt, where a keylogger or spoofed prompt can capture
+  it. MDM and inventory agents such as Fleet also use bioutil to report Touch ID status.
+created: 2026-09-20
+example_use_cases:
+  - name: Read biometric configuration and enrolled template counts
+    description: >-
+      The -r option reads whether Touch ID is enabled for unlock and Apple Pay. The -c option prints the
+      enrolled template count. Without -s these operate on the current user without elevation; with -s they
+      report system-wide state and require root. This tells an attacker whether forcing a password fallback
+      is worthwhile and which accounts have Touch ID configured.
+    code: bioutil -r
+    tactics:
+      - Discovery
+    tags:
+      - enumeration
+  - name: Disable Touch ID to force password authentication
+    description: >-
+      The "-u 0" flag disables biometrics for unlock, removing the Touch ID option from the login window,
+      screen unlock, sudo, and authentication dialogs. The "-f 0" flag goes further and turns off the entire
+      biometric subsystem including Apple Pay. Either forces the user onto a phishable account password.
+      Both require root with -s for system-wide effect.
+    code: sudo bioutil -w -s -u 0
+    tactics:
+      - Defense Evasion
+      - Credential Access
+    tags:
+      - password
+  - name: Purge enrolled biometric templates
+    description: >-
+      The -p flag deletes all enrolled templates system-wide, and "-d <UID>" targets a single user by UID.
+      Either forces the target back to password authentication until they re-enroll, widening the window
+      in which a password can be captured and destroying biometric state. Requires root.
+    code: sudo bioutil -p -s
+    tactics:
+      - Defense Evasion
+      - Credential Access
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/bioutil
+detections: []
+resources:
+  - name: "bioutil(1) man page (Apple, mirrored)"
+    url: https://keith.github.io/xcode-man-pages/bioutil.1.html
+  - name: "Fleet: Using bioutil to verify Touch ID/biometric utilization"
+    url: https://fleetdm.com/guides/using-bioutil-cmd
+  - name: "macOS TouchID: how to force immediate password check"
+    url: https://honeytreelabs.com/posts/macos-touchid-how-to-force-immediate-password-check/
+  - name: "MITRE ATT&CK T1556: Modify Authentication Process"
+    url: https://attack.mitre.org/techniques/T1556/
