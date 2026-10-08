@@ -1,0 +1,45 @@
+name: kextunload
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Terminate I/O Kit driver instances and unload loaded kernel extensions (kexts).
+full_description: kextunload terminates the I/O Kit service instances of a loaded kernel extension and unloads the kext's code and personalities from the kernel. It requires superuser privileges and fails if another loaded kext still depends on the target. Apple deprecated it in favor of "kmutil unload", but it remains present on current macOS. An attacker can use it to unload the kernel-level components of security products that ship as kexts, and malware installers have shipped it to unload their own rootkit kexts. On macOS 11 and later many vendors moved to System Extensions, which kextunload cannot remove, so the abuse below applies to components still delivered as legacy kexts.
+created: 2026-09-20
+example_use_cases:
+  - name: Unload a kernel extension to impair defenses or update a rootkit
+    description: >-
+      Run as root, kextunload unloads a loaded kext by its CFBundleIdentifier (-b) or by its bundle path,
+      terminating its IOService instances and removing its code from the kernel. An endpoint security product
+      whose monitoring component is a legacy kext stops running once its kext is unloaded. The FinSpy (FinFisher)
+      macOS malware's binary carries the string /sbin/kextunload alongside logind.kext, showing its installer
+      can unload its own rootkit kext during updates. The unload fails if another loaded kext depends on the
+      target, which kextstat can check first. Requires root.
+    code: sudo kextunload -b <SECURITY_KEXT_BUNDLE_ID>
+    tactics:
+      - Defense Evasion
+    tags: []
+  - name: Terminate I/O Kit driver instances without fully unloading the kext
+    description: >-
+      The -c flag terminates all instances of a named IOService class in the I/O Registry without unloading
+      the defining kext or its personalities, and -p terminates services and removes personalities only. An
+      attacker can use this to stop a security driver from matching devices while the kext itself stays loaded.
+      Adding -q suppresses all informational and error messages, so the operation produces no stdout or console
+      output. Requires root.
+    code: sudo kextunload -c <IOSERVICE_CLASSNAME>
+    tactics:
+      - Defense Evasion
+    tags: []
+paths:
+  - /sbin/kextunload
+detections:
+  - name: "Elastic: Attempt to Unload Elastic Endpoint Security Kernel Extension (process events where kextunload targets the security kext)"
+    url: https://www.elastic.co/docs/reference/security/prebuilt-rules/rules/macos/defense_evasion_unload_endpointsecurity_kext
+resources:
+  - name: "FinFisher Filleted: a triage of the FinSpy (macOS) malware (Objective-See)"
+    url: https://objective-see.org/blog/blog_0x4F.html
+  - name: "MITRE ATT&CK T1562.001 (Impair Defenses: Disable or Modify Tools)"
+    url: https://attack.mitre.org/techniques/T1562/001/
+  - name: "Atomic Red Team T1547.006 (Kernel Modules and Extensions)"
+    url: https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1547.006/T1547.006.md
+  - name: "kextunload man page (ss64)"
+    url: https://ss64.com/mac/kextunload.html
+acknowledgements:
+  - Patrick Wardle (Objective-See, FinSpy macOS analysis)
