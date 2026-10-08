@@ -1,0 +1,86 @@
+name: bputil
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Read and rewrite the Apple silicon boot security policy (LocalPolicy).
+full_description: >-
+  bputil is Apple's command-line front end to the BootPolicy library on Apple silicon Macs. It reads and rewrites the
+  LocalPolicy, an Image4 structure signed by the Secure Enclave Processor and evaluated by iBoot at every boot, which
+  sets Full, Reduced or Permissive Security and governs third-party kext loading, Signed System Volume verification,
+  the CTRR kernel-memory lock, iBoot's boot-args allow list, and MDM kext installs. The read path (-d, -e, -j) runs
+  from a booted macOS as root with no reboot or signing credentials, revealing whether a host is already downgraded.
+  Writes that disable restrictions or set Permissive Security require One True Recovery (1TR) and a paired recoveryOS;
+  Reduced Security and policy removal need only software-launched recoveryOS and no pairing. Every write also requires
+  a volume owner administrator's password, which releases the signing key. bputil thus requires physical access, an
+  insider, or a user walked through the reboot.
+created: 2026-09-20
+example_use_cases:
+  - name: Enumerate the boot security policy of every installed OS
+    description: >-
+      The -d and -e options print the LocalPolicy without modifying it, and -j renders it as JSON. They run from a
+      booted macOS as root with no reboot, recoveryOS or signing credentials. Output reports the Security Mode, 3rd
+      Party Kexts, Signed System Volume, Kernel CTRR, Boot Args Filtering and SIP status, plus the ECID, Board ID,
+      Chip ID and APFS Volume Group UUID of each install. An attacker with root reads this to see which kext- or
+      system-volume-based techniques the host allows and to find other installs.
+    code: sudo bputil -e -j
+    tactics:
+      - Discovery
+    tags: []
+  - name: Permit third-party kernel extensions to load
+    description: >-
+      The -k option lets the AuxiliaryKernelCache be Secure Enclave signed, which is what makes third-party kexts
+      loadable, and automatically downgrades the machine to Reduced Security. Once set, an attacker-supplied kext
+      survives reboots and runs in the kernel. Works only from 1TR with a paired recoveryOS and a volume owner's
+      password; the kext must still carry a developer signature.
+    code: bputil -k -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Persistence
+      - Defense Evasion
+    tags: []
+  - name: Downgrade security policy restrictions
+    description: >-
+      Several flags each disable a different Permissive Security restriction and follow the same invocation pattern.
+      -s turns off Signed System Volume verification, reopening persistence via system-binary edits (SSV cannot be
+      disabled while FileVault is enabled). -a lifts iBoot's boot-args allow list so security-reducing kernel options
+      take effect at the next boot. -c disables the CTRR hardware register that locks kernel memory non-writable,
+      turning a memory-corruption bug into a path to a kernel rootkit. All three downgrade the machine to Permissive
+      Security, require 1TR with a paired recoveryOS and a volume owner's password, and take the same -u/-p/-v
+      arguments.
+    code: bputil -s -u <ADMIN_USER> -p <PASSWORD> -v <VOLUME_GROUP_UUID>
+    tactics:
+      - Defense Evasion
+      - Persistence
+    tags:
+      - kernel
+  - name: Delete the LocalPolicy of a bootable OS
+    description: >-
+      The -r option removes the macOS and paired recoveryOS policies for an APFS Volume Group UUID; -z removes the
+      policies of every volume group not currently present, including disconnected bootable external drives. Without a
+      SEP-signed LocalPolicy iBoot cannot evaluate that install, which can render a system unbootable. Both run from
+      software-launched recoveryOS or 1TR with no pairing, so a session can destroy policies of installs it is not
+      paired with. Read the policy first to collect target UUIDs.
+    code: bputil -r <VOLUME_GROUP_UUID> -u <ADMIN_USER> -p <PASSWORD>
+    tactics:
+      - Impact
+    tags: []
+paths:
+  - /usr/bin/bputil
+detections: []
+resources:
+  - name: "bputil(1) man page"
+    url: https://keith.github.io/xcode-man-pages/bputil.1.html
+  - name: "Apple Platform Security: Contents of a LocalPolicy file for a Mac with Apple silicon"
+    url: https://support.apple.com/guide/security/contents-a-localpolicy-file-mac-apple-silicon-secc745a0845/web
+  - name: "Apple Platform Security: Boot process for a Mac with Apple silicon"
+    url: https://support.apple.com/guide/security/boot-process-secac71d5623/web
+  - name: "Apple Platform Security: Signed System Volume security"
+    url: https://support.apple.com/guide/security/signed-system-volume-security-secd698747c9/web
+  - name: "Apple Deployment: Use secure and bootstrap tokens"
+    url: https://support.apple.com/guide/deployment/use-secure-and-bootstrap-tokens-dep24dbdcf9e/web
+  - name: "Checking bootable systems using bputil on Apple silicon"
+    url: https://eclecticlight.co/2024/04/01/checking-bootable-systems-using-bputil-on-apple-silicon/
+  - name: "Mastering Secure Boot on Apple silicon"
+    url: https://eclecticlight.co/2024/09/09/mastering-secure-boot-on-apple-silicon/
+  - name: "Monitoring Startup Security settings on Apple Silicon Macs"
+    url: https://derflounder.wordpress.com/2021/07/23/monitoring-startup-security-settings-on-apple-silicon-macs/
+acknowledgements:
+  - Howard Oakley (The Eclectic Light Company) for documenting the bputil read path and LocalPolicy behaviour in practice
+  - Rich Trouton (Der Flounder) for the 'bputil -d' approach to monitoring startup security settings across a fleet
