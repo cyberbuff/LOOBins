@@ -1,0 +1,56 @@
+name: kextfind
+author: Hare Sudhan (@cyb3rbuff)
+short_description: Search kernel extensions by bundle ID, load state, symbols, properties and other criteria.
+full_description: >-
+  kextfind searches the system kext repositories (/System/Library/Extensions and /Library/Extensions by default)
+  for kernel extensions matching boolean queries on bundle identifiers, info-dictionary properties, load state,
+  executable architecture, defined or referenced symbols, and authentication status. It can print paths, property
+  values, diagnostics, dependency trees and tab-delimited reports for matching kexts. Because it enumerates kext
+  metadata without loading or unloading anything, it runs without privileges and produces no kernel log entries.
+  An attacker can use it to inventory security products and device drivers, discover improperly signed kexts, and
+  generate machine-parsable reports for offline analysis. kextfind is deprecated in favour of kmutil find but
+  remains present on current macOS installations.
+created: 2026-10-08
+example_use_cases:
+  - name: Enumerate third-party kernel extensions to identify security products
+    description: >-
+      A negated substring match on com.apple. prints every non-Apple kext on the host, revealing endpoint security
+      products, virtualisation hypervisors and third-party device drivers. It runs without privileges and touches
+      nothing on disk. Adding -loaded restricts the output to kexts active in the running kernel.
+    code: kextfind -case-insensitive -not -bundle-id -substring 'com.apple.' -print
+    tactics:
+      - Discovery
+    tags:
+      - kext
+      - enumeration
+  - name: Find non-loadable kexts and print their diagnostics
+    description: >-
+      The -nonloadable predicate matches kexts that fail validation, authentication or dependency checks.
+      Printing their diagnostics shows exactly what is wrong with each one, identifying improperly signed or
+      broken kexts whose bundles an attacker could replace with a malicious version that passes the checks
+      the original failed.
+    code: kextfind -nonloadable -print -print-diagnostics
+    tactics:
+      - Discovery
+    tags:
+      - kext
+  - name: Generate a machine-parsable kext inventory for exfiltration
+    description: >-
+      The -report flag produces a tab-delimited table with one row per kext, suitable for parsing or exfiltration.
+      Including bundle ID, version, validity and loaded state columns gives a complete snapshot of the host's
+      kernel extension posture in a single command.
+    code: kextfind -report -print -b -V -v -loaded
+    tactics:
+      - Collection
+      - Discovery
+    tags:
+      - kext
+      - enumeration
+paths:
+  - /usr/sbin/kextfind
+detections: []
+resources:
+  - name: "kextfind(8) man page"
+    url: https://keith.github.io/xcode-man-pages/kextfind.8.html
+  - name: "MITRE ATT&CK T1518.001: Software Discovery - Security Software Discovery"
+    url: https://attack.mitre.org/techniques/T1518/001/
